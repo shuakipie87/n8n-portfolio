@@ -1,0 +1,1309 @@
+{
+  "name": "Automate Long Video to Shorts and Automate Post using Postiz",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "4ea8261d-1047-46a1-b472-e9b4ff850bb7",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo",
+          "mode": "list",
+          "cachedResultName": "GetLong Form",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo/edit#gid=0"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "production_status",
+              "lookupValue": "for production"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        0
+      ],
+      "id": "99e7e626-5adb-4773-84a0-3e8ac3ef24eb",
+      "name": "Get LongForm",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "BPzCgeIBxo9Dtm9r",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Step 1: Get Long Form",
+        "height": 80,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        32
+      ],
+      "id": "55cc964b-ce32-4b3e-a8b7-f08836b72377",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.klap.app/v2/tasks/video-to-shorts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"source_video_url\": \"{{ $json.longform_links }}\",\n  \"language\": \"en\",\n  \"target_clip_count\": 2,\n  \"max_clip_count\": 2,\n  \"editing_options\": {\n    \"captions\": true,\n    \"reframe\": true,\n    \"remove_silences\": true,\n    \"intro_title\": false\n  },\n  \"dimensions\": {\n    \"width\": 1080,\n    \"height\": 920\n  },\n  \"min_duration\": 15,\n  \"max_duration\": 60,\n  \"target_duration\": 30\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        0,
+        160
+      ],
+      "id": "21aa946c-d118-42da-9614-9ed7db6d3173",
+      "name": "Analyze LongForm",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kOwNNmemf76kTOzE",
+          "name": "Klap Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        160
+      ],
+      "id": "505554e7-cafb-4801-ae81-7ddeb795508c",
+      "name": "Wait",
+      "webhookId": "4f2c199d-4d6a-4df3-8023-f5aea972e7a0"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.klap.app/v2/tasks/{{ $json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        448,
+        160
+      ],
+      "id": "1f159204-deef-4552-b831-fbe7ded2a629",
+      "name": "Get Status2",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kOwNNmemf76kTOzE",
+          "name": "Klap Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bfb560f6-1658-4373-907c-3a0d24be9a14",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ready",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        656,
+        160
+      ],
+      "id": "070e4a2b-5547-471f-90a0-8e0b88843dee",
+      "name": "ready?"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.klap.app/v2/projects/{{ $json.output_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        896,
+        160
+      ],
+      "id": "0d32df2b-7905-481a-ba71-66b3f5d732b8",
+      "name": "Get Short Details",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kOwNNmemf76kTOzE",
+          "name": "Klap Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Step 2: Analyze the Form",
+        "height": 80,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        208
+      ],
+      "id": "1da22528-fc20-4610-815c-9de14f3899ab",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.klap.app/v2/projects/{{ $json.folder_id }}/{{ $json.id }}/exports",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n\"preset_id\": \"123\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        0,
+        352
+      ],
+      "id": "a15be1fa-5b77-4345-8620-e1377bbe470f",
+      "name": "Export Shorts",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kOwNNmemf76kTOzE",
+          "name": "Klap Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        352
+      ],
+      "id": "59c9052b-282e-4d1b-8b55-fbcd6ed007ce",
+      "name": "Wait1",
+      "webhookId": "b0ddb4ae-bf03-4812-82d4-359b14c15acc"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.klap.app/v2/projects/{{ $json.folder_id }}/{{ $json.id }}/exports/{{ $json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        448,
+        352
+      ],
+      "id": "9c722bad-a44a-448a-bdb7-588696bc57dc",
+      "name": "Get Shorts",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kOwNNmemf76kTOzE",
+          "name": "Klap Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c2602bad-76c5-4eb1-91fd-8d907ecc544a",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ready",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        352
+      ],
+      "id": "18d700e8-a0ad-4483-a9fc-673df64bf8bf",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo",
+          "mode": "list",
+          "cachedResultName": "GetLong Form",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "production_status": "done",
+            "id": "={{ $('Get LongForm').first().json.id }}",
+            "date_produced": "={{ new Date().toISOString().split('T')[0] }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "longform_links",
+              "displayName": "longform_links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "production_status",
+              "displayName": "production_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_produced",
+              "displayName": "date_produced",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        896,
+        352
+      ],
+      "id": "6a684d09-fff5-4fc7-90a6-71a672f4b9a5",
+      "name": "Update longform Status",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "BPzCgeIBxo9Dtm9r",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo",
+          "mode": "list",
+          "cachedResultName": "GetLong Form",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1032502520,
+          "mode": "list",
+          "cachedResultName": "Sheet2",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo/edit#gid=1032502520"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "shortform_links": "={{ $('Get Shorts').item.json.src_url }}",
+            "tiktok_caption": "={{ $('Get Short Details').item.json.publication_captions.tiktok }}",
+            "instragram_caption": "={{ $('Get Short Details').item.json.publication_captions.instagram }}",
+            "youtube_caption": "={{ $('Get Short Details').item.json.publication_captions.youtube }}",
+            "linkedin_caption": "={{ $('Get Short Details').item.json.publication_captions.linkedin }}",
+            "id": "==ROW()-1"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "shortform_links",
+              "displayName": "shortform_links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiktok_caption",
+              "displayName": "tiktok_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "instragram_caption",
+              "displayName": "instragram_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "youtube_caption",
+              "displayName": "youtube_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "linkedin_caption",
+              "displayName": "linkedin_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "publishing_status",
+              "displayName": "publishing_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_publish",
+              "displayName": "date_publish",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        16,
+        672
+      ],
+      "id": "00249006-8306-48ef-ac1c-f652913eb897",
+      "name": "Log Shorts",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "BPzCgeIBxo9Dtm9r",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Step 3: Produce Shorts",
+        "height": 80,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        368
+      ],
+      "id": "b2ccedcc-1be8-4013-964b-bc930f25e4be",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "Step 4: Publish Shorts",
+        "height": 80,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        624
+      ],
+      "id": "c16be6f3-a15f-41bd-9a13-3ea8aaeedda1",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo",
+          "mode": "list",
+          "cachedResultName": "GetLong Form",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1032502520,
+          "mode": "list",
+          "cachedResultName": "Sheet2",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/14OF7FUrXyyBGkoP37Dy3Wj0bUwXUmuz2iOmfo0LnALo/edit#gid=1032502520"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "shortform_links": "={{ $('Get Shorts').item.json.src_url }}",
+            "tiktok_caption": "={{ $('Get Short Details').item.json.publication_captions.tiktok }}",
+            "instragram_caption": "={{ $('Get Short Details').item.json.publication_captions.instagram }}",
+            "youtube_caption": "={{ $('Get Short Details').item.json.publication_captions.youtube }}",
+            "linkedin_caption": "={{ $('Get Short Details').item.json.publication_captions.linkedin }}",
+            "id": "==ROW()-1",
+            "publishing_status": "=done",
+            "date_publish": "{{ new Date().toISOString().split('T')[0] }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "shortform_links",
+              "displayName": "shortform_links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiktok_caption",
+              "displayName": "tiktok_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "instragram_caption",
+              "displayName": "instragram_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "youtube_caption",
+              "displayName": "youtube_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "linkedin_caption",
+              "displayName": "linkedin_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "publishing_status",
+              "displayName": "publishing_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_publish",
+              "displayName": "date_publish",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        496,
+        960
+      ],
+      "id": "50a8e6ae-76b2-4c81-8911-adea9b3e22b7",
+      "name": "UPDATE SHORTS STATUS",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "BPzCgeIBxo9Dtm9r",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.shortform_links }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        208,
+        672
+      ],
+      "id": "556335b0-394c-45d4-8247-5afaf08851cb",
+      "name": "Load Shorts Postiz1"
+    },
+    {
+      "parameters": {
+        "operation": "uploadFile",
+        "binaryProperty": "={{ $('Load Shorts Postiz1').item.binary.data }}"
+      },
+      "type": "n8n-nodes-postiz.postiz",
+      "typeVersion": 1,
+      "position": [
+        432,
+        672
+      ],
+      "id": "378a09d2-4444-48a0-8062-6f4e5c6de082",
+      "name": "Upload Shorts Postiz",
+      "credentials": {
+        "postizApi": {
+          "id": "d3vnzks7cBxDM3Gd",
+          "name": "Postiz account Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getIntegrations"
+      },
+      "type": "n8n-nodes-postiz.postiz",
+      "typeVersion": 1,
+      "position": [
+        656,
+        672
+      ],
+      "id": "e122278b-f110-4d43-ab68-58babf8604ba",
+      "name": "Get Channels Postiz",
+      "credentials": {
+        "postizApi": {
+          "id": "d3vnzks7cBxDM3Gd",
+          "name": "Postiz account Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.postiz.com/public/v1/posts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "=json",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "jsonBody": "={\n  \"type\": \"schedule\",\n  \"tags\": [],\n  \"shortLink\": false,\n  \"date\": \"2025-11-28T12:02:09\",\n  \"posts\": [\n    {\n      \"integration\": {\n        \"id\": \"{{ $json.id }}\"\n      },\n      \"group\": \"wPgZZYtoXY\",\n      \"settings\": {\n        \"title\": \"Test\",\n        \"type\": \"public\",\n        \"selfDeclaredMadeForKids\": \"no\"\n      },\n      \"value\": [\n        {\n          \"id\": \"tUMuJ1LwoG\",\n          \"content\": \"<p>Test</p>\",\n          \"image\": [\n            {\n              \"id\": \"3e3a6030-678a-4503-a2cf-466fd1e6b39c\",\n              \"path\": \"{{ $json.picture }}\",\n              \"alt\": null,\n              \"thumbnail\": null,\n              \"thumbnailTimestamp\": null\n            }\n          ]\n        }\n      ]\n    }\n  ]\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        912,
+        672
+      ],
+      "id": "ba2c3bcc-e193-4fa6-81bc-19659dbfa11d",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "L3DgAjQzGpF9sN55",
+          "name": "Postiz Auth"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Schedule Trigger": [
+      {
+        "json": {
+          "timestamp": "2025-11-28T00:34:20.343+08:00",
+          "Readable date": "November 28th 2025, 12:34:20 am",
+          "Readable time": "12:34:20 am",
+          "Day of week": "Friday",
+          "Year": "2025",
+          "Month": "November",
+          "Day of month": "28",
+          "Hour": "00",
+          "Minute": "34",
+          "Second": "20",
+          "Timezone": "Asia/Manila (UTC+08:00)"
+        }
+      }
+    ],
+    "Get LongForm": [
+      {
+        "json": {
+          "row_number": 2,
+          "id": 1,
+          "longform_links": "https://www.youtube.com/watch?v=3sLP2bcD5Xg",
+          "production_status": "for production",
+          "date_produced": "2025-11-27"
+        }
+      }
+    ],
+    "Analyze LongForm": [
+      {
+        "json": {
+          "id": "FTjXbw9xnuYU9FrG",
+          "type": "video-to-shorts",
+          "status": "processing",
+          "error_code": null,
+          "created_at": "2025-11-27T16:35:28.262Z",
+          "output_type": "folder",
+          "output_id": "i6u7sU4S"
+        }
+      }
+    ],
+    "Wait": [
+      {
+        "json": {
+          "id": "FTjXbw9xnuYU9FrG",
+          "type": "video-to-shorts",
+          "status": "processing",
+          "error_code": null,
+          "created_at": "2025-11-27T16:35:28.262Z",
+          "output_type": "folder",
+          "output_id": "i6u7sU4S"
+        }
+      }
+    ],
+    "Get Status2": [
+      {
+        "json": {
+          "id": "FTjXbw9xnuYU9FrG",
+          "type": "video-to-shorts",
+          "status": "ready",
+          "error_code": null,
+          "created_at": "2025-11-27T16:35:28.262Z",
+          "output_type": "folder",
+          "output_id": "i6u7sU4S"
+        }
+      }
+    ],
+    "Get Short Details": [
+      {
+        "json": {
+          "id": "HZeTYwGiUt9A",
+          "author_id": "5fa526d8-1d97-4ade-9870-5a6afdb1416f",
+          "folder_id": "i6u7sU4S",
+          "name": "Machine-gun approach: launch fast, iterate, and win by taking many shots",
+          "created_at": "2025-11-27T16:38:57.418+00:00",
+          "updated_at": "2025-11-27T16:38:57.418+00:00",
+          "virality_score": 84,
+          "virality_score_explanation": "Punchy 29s hook with a memorable metaphor (machine-gun vs sniper), clear actionable mindset and high shareability for founders/creators. Very replayable and easy to pair with quick visuals; loses a few points for limited mainstream appeal and lack of a standout anecdote or emotional peak.",
+          "publication_captions": {
+            "tiktok": "Ready to fire? 🎯 Embrace the machine-gun approach! 💥 What’s your next shot? #LaunchFast #Iterate",
+            "youtube": "Ready to unleash your creativity? 💥 Let’s talk the machine-gun approach! 🚀 #LaunchFast #Iterate",
+            "linkedin": "Ready to fire up your ideas? 💥 Launch fast, iterate, and win! What's your next shot? 🎯 #MachineGunMindset",
+            "instagram": "Ready to fire? 🎯 Launch fast, iterate faster! 💥 What's your next shot? #MachineGunMindset"
+          },
+          "transcript_text": "I call this the machine gun approach. Build fast, release often, and treat every single app like a small experiment. Most people try to take like a sniper shot. One big idea, months or years of work, betting everything on a single shot, a single release. And then when it fails, game over. But the machine gun approach flips that logic around. You take lots of shots on the target and most will miss."
+        }
+      },
+      {
+        "json": {
+          "id": "AzH0ZqXn8Wbi",
+          "author_id": "5fa526d8-1d97-4ade-9870-5a6afdb1416f",
+          "folder_id": "i6u7sU4S",
+          "name": "How I turned one app into many — reuse code modules to multiply downloads and make $800K",
+          "created_at": "2025-11-27T16:39:05.555+00:00",
+          "updated_at": "2025-11-27T16:39:05.555+00:00",
+          "virality_score": 92,
+          "virality_score_explanation": "Strong viral potential — tight 35s runtime with a big hook (’make $800K’), actionable and repeatable tip (reuse code modules), and hot trends (Google Gemini/AI) plus nostalgia/emo triggers (Pokemon/Yu-Gi-Oh/’remove my ex’). Very shareable to makers and broader audiences intrigued by quick money/AI hacks. Slight downside: a bit technical and would rely on compelling visuals/demos to reach mainstream viral peaks.",
+          "publication_captions": {
+            "tiktok": "💡 From one app to many! How did I make $800K? 🤔 Let’s talk code magic! 🪄 #AppDevelopment #TechHacks",
+            "youtube": "💰 From 1 app to $$$! How do you multiply your ideas? 🤔 #AppMagic #CodeHacks",
+            "linkedin": "💡 Ever thought one app could lead to many? 🤔 Check out my $800K journey! 💰 #AppSuccess #CodeMagic",
+            "instagram": "💡 Ever wondered how to multiply your app downloads? 🤔 Check out my $800K secret! 💰 #AppHacks #CodeMagic"
+          },
+          "transcript_text": "I also created a fish identifier and insect identifier. And for my Pokemon card scanner app, I spun it up into a Yu-Gi-Oh card scanner and a Star Wars unlimited card scanner app. And then for my remove my ex app, this was an app that uses Google Gemini to remove people from photos. I spun this up into a cartoon yourself app and an app that turns your drawings into photos. All three of these use the exact same code to interact with Google Gemini and a lot of the framework that I built for the apps themselves. They just needed a few tweaks."
+        }
+      }
+    ],
+    "Export Shorts": [
+      {
+        "json": {
+          "id": "4aa4f8ee-8271-449d-9385-e03f3dc38bdb",
+          "status": "processing",
+          "src_url": null,
+          "estimated_ready_at": "2025-11-27T16:49:22.985Z",
+          "project_id": "HZeTYwGiUt9A",
+          "created_at": "2025-11-27T16:48:53.985Z",
+          "name": "Machine-gun approach: launch fast, iterate, and win by taking many shots",
+          "author_id": "5fa526d8-1d97-4ade-9870-5a6afdb1416f",
+          "folder_id": "i6u7sU4S",
+          "descriptions": null,
+          "scale": 1
+        }
+      },
+      {
+        "json": {
+          "id": "372a9ff2-c96c-4279-ade7-3314abf6268b",
+          "status": "processing",
+          "src_url": null,
+          "estimated_ready_at": "2025-11-27T16:49:29.087Z",
+          "project_id": "AzH0ZqXn8Wbi",
+          "created_at": "2025-11-27T16:48:54.087Z",
+          "name": "How I turned one app into many — reuse code modules to multiply downloads and make $800K",
+          "author_id": "5fa526d8-1d97-4ade-9870-5a6afdb1416f",
+          "folder_id": "i6u7sU4S",
+          "descriptions": null,
+          "scale": 1
+        }
+      }
+    ],
+    "Wait1": [
+      {
+        "json": {
+          "id": "4aa4f8ee-8271-449d-9385-e03f3dc38bdb",
+          "status": "processing",
+          "src_url": null,
+          "estimated_ready_at": "2025-11-27T16:49:22.985Z",
+          "project_id": "HZeTYwGiUt9A",
+          "created_at": "2025-11-27T16:48:53.985Z",
+          "name": "Machine-gun approach: launch fast, iterate, and win by taking many shots",
+          "author_id": "5fa526d8-1d97-4ade-9870-5a6afdb1416f",
+          "folder_id": "i6u7sU4S",
+          "descriptions": null,
+          "scale": 1
+        }
+      },
+      {
+        "json": {
+          "id": "372a9ff2-c96c-4279-ade7-3314abf6268b",
+          "status": "processing",
+          "src_url": null,
+          "estimated_ready_at": "2025-11-27T16:49:29.087Z",
+          "project_id": "AzH0ZqXn8Wbi",
+          "created_at": "2025-11-27T16:48:54.087Z",
+          "name": "How I turned one app into many — reuse code modules to multiply downloads and make $800K",
+          "author_id": "5fa526d8-1d97-4ade-9870-5a6afdb1416f",
+          "folder_id": "i6u7sU4S",
+          "descriptions": null,
+          "scale": 1
+        }
+      }
+    ],
+    "Get Shorts": [
+      {
+        "json": {
+          "id": "4aa4f8ee-8271-449d-9385-e03f3dc38bdb",
+          "status": "ready",
+          "src_url": "https://storage.googleapis.com/klap-renders/nZJACgTW6WaGBj55.mp4",
+          "estimated_ready_at": "2025-11-27T16:49:22.985Z",
+          "project_id": "HZeTYwGiUt9A",
+          "created_at": "2025-11-27T16:48:53.985Z",
+          "finished_at": "2025-11-27T16:50:34.897Z",
+          "name": "Machine-gun approach: launch fast, iterate, and win by taking many shots",
+          "author_id": "5fa526d8-1d97-4ade-9870-5a6afdb1416f",
+          "folder_id": "i6u7sU4S",
+          "descriptions": null,
+          "scale": 1
+        }
+      },
+      {
+        "json": {
+          "id": "372a9ff2-c96c-4279-ade7-3314abf6268b",
+          "status": "ready",
+          "src_url": "https://storage.googleapis.com/klap-renders/3P36drbAckdOzlxV.mp4",
+          "estimated_ready_at": "2025-11-27T16:49:29.087Z",
+          "project_id": "AzH0ZqXn8Wbi",
+          "created_at": "2025-11-27T16:48:54.087Z",
+          "finished_at": "2025-11-27T16:50:34.398Z",
+          "name": "How I turned one app into many — reuse code modules to multiply downloads and make $800K",
+          "author_id": "5fa526d8-1d97-4ade-9870-5a6afdb1416f",
+          "folder_id": "i6u7sU4S",
+          "descriptions": null,
+          "scale": 1
+        }
+      }
+    ],
+    "Update longform Status": [
+      {
+        "json": {
+          "production_status": "done",
+          "id": 1,
+          "date_produced": "2025-11-27"
+        }
+      },
+      {
+        "json": {
+          "production_status": "done",
+          "id": 1,
+          "date_produced": "2025-11-27"
+        }
+      }
+    ],
+    "Log Shorts": [
+      {
+        "json": {
+          "shortform_links": "https://storage.googleapis.com/klap-renders/nZJACgTW6WaGBj55.mp4",
+          "tiktok_caption": "Ready to fire? 🎯 Embrace the machine-gun approach! 💥 What’s your next shot? #LaunchFast #Iterate",
+          "instragram_caption": "Ready to fire? 🎯 Launch fast, iterate faster! 💥 What's your next shot? #MachineGunMindset",
+          "youtube_caption": "Ready to unleash your creativity? 💥 Let’s talk the machine-gun approach! 🚀 #LaunchFast #Iterate",
+          "linkedin_caption": "Ready to fire up your ideas? 💥 Launch fast, iterate, and win! What's your next shot? 🎯 #MachineGunMindset",
+          "id": "=ROW()-1"
+        }
+      },
+      {
+        "json": {
+          "shortform_links": "https://storage.googleapis.com/klap-renders/3P36drbAckdOzlxV.mp4",
+          "tiktok_caption": "💡 From one app to many! How did I make $800K? 🤔 Let’s talk code magic! 🪄 #AppDevelopment #TechHacks",
+          "instragram_caption": "💡 Ever wondered how to multiply your app downloads? 🤔 Check out my $800K secret! 💰 #AppHacks #CodeMagic",
+          "youtube_caption": "💰 From 1 app to $$$! How do you multiply your ideas? 🤔 #AppMagic #CodeHacks",
+          "linkedin_caption": "💡 Ever thought one app could lead to many? 🤔 Check out my $800K journey! 💰 #AppSuccess #CodeMagic",
+          "id": "=ROW()-1"
+        }
+      }
+    ],
+    "Load Shorts Postiz1": [
+      {
+        "json": {
+          "shortform_links": "https://storage.googleapis.com/klap-renders/nZJACgTW6WaGBj55.mp4",
+          "tiktok_caption": "Ready to fire? 🎯 Embrace the machine-gun approach! 💥 What’s your next shot? #LaunchFast #Iterate",
+          "instragram_caption": "Ready to fire? 🎯 Launch fast, iterate faster! 💥 What's your next shot? #MachineGunMindset",
+          "youtube_caption": "Ready to unleash your creativity? 💥 Let’s talk the machine-gun approach! 🚀 #LaunchFast #Iterate",
+          "linkedin_caption": "Ready to fire up your ideas? 💥 Launch fast, iterate, and win! What's your next shot? 🎯 #MachineGunMindset",
+          "id": "=ROW()-1"
+        },
+        "binary": {
+          "data": {
+            "mimeType": "video/mp4",
+            "fileType": "video",
+            "fileExtension": "mp4",
+            "data": "filesystem-v2",
+            "directory": "klap-renders",
+            "fileName": "nZJACgTW6WaGBj55.mp4",
+            "id": "filesystem-v2:workflows/GZhWX9UDxxWgI8GL/executions/225/binary_data/324681de-a1f1-461a-bba7-9b0d5c5f53ca",
+            "fileSize": "15.9 MB"
+          }
+        }
+      },
+      {
+        "json": {
+          "shortform_links": "https://storage.googleapis.com/klap-renders/3P36drbAckdOzlxV.mp4",
+          "tiktok_caption": "💡 From one app to many! How did I make $800K? 🤔 Let’s talk code magic! 🪄 #AppDevelopment #TechHacks",
+          "instragram_caption": "💡 Ever wondered how to multiply your app downloads? 🤔 Check out my $800K secret! 💰 #AppHacks #CodeMagic",
+          "youtube_caption": "💰 From 1 app to $$$! How do you multiply your ideas? 🤔 #AppMagic #CodeHacks",
+          "linkedin_caption": "💡 Ever thought one app could lead to many? 🤔 Check out my $800K journey! 💰 #AppSuccess #CodeMagic",
+          "id": "=ROW()-1"
+        },
+        "binary": {
+          "data": {
+            "mimeType": "video/mp4",
+            "fileType": "video",
+            "fileExtension": "mp4",
+            "data": "filesystem-v2",
+            "directory": "klap-renders",
+            "fileName": "3P36drbAckdOzlxV.mp4",
+            "id": "filesystem-v2:workflows/GZhWX9UDxxWgI8GL/executions/225/binary_data/fbc91493-7c1b-4e45-a2e9-a5c1d203171f",
+            "fileSize": "16 MB"
+          }
+        }
+      }
+    ],
+    "Upload Shorts Postiz": [
+      {
+        "json": {
+          "id": "3e3a6030-678a-4503-a2cf-466fd1e6b39c",
+          "name": "nfdXpMnrEM.mp4",
+          "path": "https://uploads.postiz.com/nfdXpMnrEM.mp4",
+          "thumbnail": null,
+          "alt": null
+        }
+      },
+      {
+        "json": {
+          "id": "257a922f-88e0-4b4a-95f0-31ffecceb8fb",
+          "name": "sZrpxtpoyL.mp4",
+          "path": "https://uploads.postiz.com/sZrpxtpoyL.mp4",
+          "thumbnail": null,
+          "alt": null
+        }
+      }
+    ],
+    "Get Channels Postiz": [
+      {
+        "json": {
+          "id": "cmihr3p4v006emh0ykea4nk1e",
+          "name": "Joem Yams",
+          "identifier": "youtube",
+          "picture": "https://uploads.postiz.com/wyxriWW301.png",
+          "disabled": false,
+          "profile": ""
+        }
+      },
+      {
+        "json": {
+          "id": "cmihr3p4v006emh0ykea4nk1e",
+          "name": "Joem Yams",
+          "identifier": "youtube",
+          "picture": "https://uploads.postiz.com/wyxriWW301.png",
+          "disabled": false,
+          "profile": ""
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get LongForm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get LongForm": {
+      "main": [
+        [
+          {
+            "node": "Analyze LongForm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze LongForm": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Get Status2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Status2": {
+      "main": [
+        [
+          {
+            "node": "ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ready?": {
+      "main": [
+        [
+          {
+            "node": "Get Short Details",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Short Details": {
+      "main": [
+        [
+          {
+            "node": "Export Shorts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Export Shorts": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Get Shorts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Shorts": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Update longform Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update longform Status": {
+      "main": [
+        [
+          {
+            "node": "Log Shorts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Shorts": {
+      "main": [
+        [
+          {
+            "node": "Load Shorts Postiz1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Shorts Postiz1": {
+      "main": [
+        [
+          {
+            "node": "Upload Shorts Postiz",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "UPDATE SHORTS STATUS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Shorts Postiz": {
+      "main": [
+        [
+          {
+            "node": "Get Channels Postiz",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Channels Postiz": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d1d24508-b725-459c-900d-12b58a09f629",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6f482336c56b4e30ded15a4e558125cc29bc79d4d8050c576a21a7310cd482b3"
+  },
+  "id": "GZhWX9UDxxWgI8GL",
+  "tags": []
+}

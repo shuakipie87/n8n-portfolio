@@ -1,0 +1,207 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "submit-feedback",
+        "options": {}
+      },
+      "id": "00b91d31-4096-4876-928e-5b12368962c5",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "content": "You are a helpful automation assistant. \n\nAnalyze the following user feedback message: \"{{ $json.body.message }}\"\n\nDetermine two things:\n1. Sentiment (Positive, Neutral, or Negative)\n2. Priority (High, Medium, or Low)\n\nReturn the result as a strictly formatted JSON object. Do not include any markdown formatting or explanation. \n\nExample output:\n{\n  \"sentiment\": \"Negative\",\n  \"priority\": \"High\"\n}"
+            }
+          ]
+        },
+        "jsonOutput": true
+      },
+      "id": "37b29381-8123-4412-a123-928374619283",
+      "name": "OpenAI Analysis",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CRED_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// The OpenAI node might return the content as a string inside the 'message.content' or directly as JSON depending on settings.\n// This node ensures we have clean data for Airtable.\n\nconst aiData = $input.all()[0].json.message.content;\nlet parsedData = {};\n\ntry {\n    // Sometimes AI wraps response in markdown code blocks like ```json ... ```\n    // We remove them just in case\n    const cleanString = typeof aiData === 'string' ? aiData.replace(/```json/g, '').replace(/```/g, '').trim() : JSON.stringify(aiData);\n    parsedData = JSON.parse(cleanString);\n} catch (e) {\n    // Fallback if parsing fails or if it was already an object\n    parsedData = typeof aiData === 'object' ? aiData : { sentiment: 'Neutral', priority: 'Medium' };\n}\n\n// Merge original form data with AI insights\nconst originalData = $(\"Webhook\").first().json.body;\n\nreturn {\n  json: {\n    ...originalData,\n    ...parsedData\n  }\n};"
+      },
+      "id": "82937412-9123-4921-b123-912837192837",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "baseId": "appYourBaseId123",
+        "table": "Submissions",
+        "columnsUi": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $json.name }}",
+            "Email": "={{ $json.email }}",
+            "Message": "={{ $json.message }}",
+            "Sentiment": "={{ $json.sentiment }}",
+            "Priority": "={{ $json.priority }}"
+          }
+        }
+      },
+      "id": "91238471-1234-4123-c123-129384712938",
+      "name": "Airtable Store",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "airtableApi": {
+          "id": "YOUR_AIRTABLE_CRED_ID",
+          "name": "Airtable account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.priority }}",
+              "value2": "High"
+            }
+          ]
+        }
+      },
+      "id": "19283741-2345-4123-d123-928374192837",
+      "name": "Is High Priority?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "urgent-feedback",
+        "text": "=🚨 *High Priority Feedback Received*\n\n*From:* {{ $json.email }}\n*Sentiment:* {{ $json.sentiment }}\n*Message:* {{ $json.message }}",
+        "otherOptions": {}
+      },
+      "id": "29384712-3456-4123-e123-912837419238",
+      "name": "Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        200
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "YOUR_SLACK_CRED_ID",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "39485712-4567-4123-f123-912837419238",
+      "name": "No Op",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Airtable Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable Store": {
+      "main": [
+        [
+          {
+            "node": "Is High Priority?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is High Priority?": {
+      "main": [
+        [
+          {
+            "node": "Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Op",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

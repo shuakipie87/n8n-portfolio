@@ -1,0 +1,295 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "submit-feedback",
+        "options": {
+          "responseMode": "responseNode"
+        }
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000000",
+      "name": "Webhook Form Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ !!($json.body.feedback && $json.body.email) }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0002-4000-8000-000000000000",
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"error\": \"Bad Request\",\n  \"message\": \"Missing required fields: 'feedback' and 'email' are mandatory.\"\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "a1b2c3d4-0003-4000-8000-000000000000",
+      "name": "Respond 400 Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        540,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a Senior Customer Support AI. Analyze the sentiment and priority of the provided user feedback.\n\nYOUR TASK:\n1. Output strictly valid JSON. \n2. Analyze 'sentiment' (Positive, Neutral, Negative).\n3. Analyze 'priority' (High, Medium, Low) based on urgency and tone.\n4. If the input is gibberish, spam, or cannot be processed, return { \"sentiment\": \"Neutral\", \"priority\": \"Low\", \"flagged\": true }.\n\nJSON SCHEMA:\n{\n  \"sentiment\": \"String\",\n  \"priority\": \"String\"\n}"
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.body.feedback }}"
+            }
+          ]
+        },
+        "options": {
+          "responseFormat": "json_object"
+        }
+      },
+      "id": "a1b2c3d4-0004-4000-8000-000000000000",
+      "name": "AI Sentiment Analysis",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        540,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Safe parsing of AI JSON response\nconst aiContent = $input.first().json.message.content;\nlet analysis;\n\ntry {\n  analysis = JSON.parse(aiContent);\n} catch (error) {\n  // Fallback safe default\n  analysis = { sentiment: 'Neutral', priority: 'Medium' };\n}\n\n// Merge original input body with analysis\nreturn {\n  json: {\n    ...$('Webhook Form Trigger').first().json.body,\n    ...analysis\n  }\n};"
+      },
+      "id": "a1b2c3d4-0005-4000-8000-000000000000",
+      "name": "Parse & Merge Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        760,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "baseId": "{{ $env.AIRTABLE_BASE_ID }}",
+        "table": "{{ $env.AIRTABLE_TABLE_NAME }}",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $json.name }}",
+            "Email": "={{ $json.email }}",
+            "Feedback": "={{ $json.feedback }}",
+            "Sentiment": "={{ $json.sentiment }}",
+            "Priority": "={{ $json.priority }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-4000-8000-000000000000",
+      "name": "Airtable Store",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        980,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"success\",\n  \"message\": \"Feedback received and processed.\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a1b2c3d4-0007-4000-8000-000000000000",
+      "name": "Respond 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.priority }}",
+              "value2": "High"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0008-4000-8000-000000000000",
+      "name": "Is High Priority?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "general",
+        "text": "=🚨 *High Priority Feedback* 🚨\n\n*From:* {{ $json.name }} ({{ $json.email }})\n*Sentiment:* {{ $json.sentiment }}\n*Message:* {{ $json.feedback }}\n\n<{{ $execution.url }}|View Workflow Execution>",
+        "otherOptions": {}
+      },
+      "id": "a1b2c3d4-0009-4000-8000-000000000000",
+      "name": "Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        580
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-0010-4000-8000-000000000000",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "it-alerts",
+        "text": "=⚠️ *Workflow Error Report*\n\n*Workflow:* {{ $workflow.name }}\n*Node:* {{ $execution.lastNodeExecuted }}\n*Error:* {{ $execution.error.message }}\n\n👉 <{{ $execution.url }}|Debug Execution>",
+        "otherOptions": {}
+      },
+      "id": "a1b2c3d4-0011-4000-8000-000000000000",
+      "name": "Slack Error Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        320,
+        700
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Form Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Payload": {
+      "main": [
+        [
+          {
+            "node": "AI Sentiment Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400 Bad Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Sentiment Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse & Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Merge Data": {
+      "main": [
+        [
+          {
+            "node": "Airtable Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable Store": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 OK",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is High Priority?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is High Priority?": {
+      "main": [
+        [
+          {
+            "node": "Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Slack Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

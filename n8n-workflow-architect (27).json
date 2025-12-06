@@ -1,0 +1,241 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "submit-feedback",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000000",
+      "name": "Webhook Form Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-3.5-turbo",
+          "mode": "list",
+          "cachedResultName": "gpt-3.5-turbo"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a customer service automation bot. Analyze the user feedback provided. \n\nYou must return a strictly valid JSON object. Do not include markdown code blocks (like ```json). Just the raw JSON.\n\nThe JSON must have exactly these two keys:\n1. \"sentiment\": One of [\"Positive\", \"Neutral\", \"Negative\"]\n2. \"priority\": One of [\"High\", \"Medium\", \"Low\"]\n\nBase the priority on the urgency and anger level of the feedback."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.body.feedback }}"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0002-4000-8000-000000000000",
+      "name": "OpenAI Analysis",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json.content;\nlet parsedData;\n\ntry {\n  parsedData = JSON.parse(aiResponse);\n} catch (e) {\n  // Fallback if AI returns unstructured text\n  parsedData = { sentiment: 'Neutral', priority: 'Medium' };\n}\n\nreturn {\n  json: {\n    ...$input.first().json.body,\n    ...parsedData\n  }\n};"
+      },
+      "id": "a1b2c3d4-0003-4000-8000-000000000000",
+      "name": "Parse AI JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "baseId": "YOUR_AIRTABLE_BASE_ID",
+        "table": "YOUR_TABLE_NAME",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $json.name }}",
+            "Email": "={{ $json.email }}",
+            "Feedback": "={{ $json.feedback }}",
+            "Sentiment": "={{ $json.sentiment }}",
+            "Priority": "={{ $json.priority }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-4000-8000-000000000000",
+      "name": "Airtable Store",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "airtableApi": {
+          "id": "YOUR_AIRTABLE_CREDENTIAL_ID",
+          "name": "Airtable account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.Priority }}",
+              "value2": "High"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0005-4000-8000-000000000000",
+      "name": "Check High Priority",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "general",
+        "text": "=🚨 *High Priority Feedback* 🚨\n\n*From:* {{ $json.Name }} ({{ $json.Email }})\n*Sentiment:* {{ $json.Sentiment }}\n*Message:* {{ $json.Feedback }}",
+        "otherOptions": {}
+      },
+      "id": "a1b2c3d4-0006-4000-8000-000000000000",
+      "name": "Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        200
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "it-alerts",
+        "text": "=⚠️ Workflow Error: {{ $node.Webhook.json.body.name }} submission failed.",
+        "otherOptions": {}
+      },
+      "id": "a1b2c3d4-0007-4000-8000-000000000000",
+      "name": "Slack Error Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        500
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-0008-4000-8000-000000000000",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        540,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Form Trigger": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse AI JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI JSON": {
+      "main": [
+        [
+          {
+            "node": "Airtable Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable Store": {
+      "main": [
+        [
+          {
+            "node": "Check High Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check High Priority": {
+      "main": [
+        [
+          {
+            "node": "Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Slack Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

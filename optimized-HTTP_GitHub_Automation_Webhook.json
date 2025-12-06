@@ -1,0 +1,378 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 * * * *"
+            }
+          ]
+        }
+      },
+      "name": "Schedule (Hourly)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "trigger-cron"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "dashboardHostname",
+              "value": "http://192.168.0.14:8080"
+            },
+            {
+              "name": "npm_package",
+              "value": "n8n"
+            },
+            {
+              "name": "docker_namespace",
+              "value": "n8nio"
+            },
+            {
+              "name": "docker_repo",
+              "value": "n8n"
+            },
+            {
+              "name": "github_owner",
+              "value": "n8n-io"
+            },
+            {
+              "name": "github_repo",
+              "value": "n8n"
+            },
+            {
+              "name": "product_hunt_post_id",
+              "value": "170391"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "config",
+      "notes": "Credentials should be used for Auth Tokens. Added placeholders."
+    },
+    {
+      "parameters": {
+        "url": "=https://hub.docker.com/v2/repositories/{{ $json.docker_namespace }}/{{ $json.docker_repo }}",
+        "options": {},
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-automation"
+            }
+          ]
+        }
+      },
+      "name": "Retrieve Docker Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        600,
+        -200
+      ],
+      "id": "fetch-docker",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.npms.io/v2/package/{{ $json.npm_package }}",
+        "options": {},
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-automation"
+            }
+          ]
+        }
+      },
+      "name": "Retrieve npm Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        600,
+        -40
+      ],
+      "id": "fetch-npm",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "owner": "={{ $json.github_owner }}",
+        "repository": "={{ $json.github_repo }}",
+        "operation": "get"
+      },
+      "name": "Retrieve GitHub Data",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        600,
+        120
+      ],
+      "id": "fetch-github",
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "GITHUB_CREDENTIAL_ID_HERE",
+          "name": "GitHub account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.producthunt.com/v2/api/graphql",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "= { post(id: {{ $node.Config.json.product_hunt_post_id }}) { commentsCount votesCount reviewsCount reviewsRating name } }"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Retrieve Product Hunt Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        600,
+        300
+      ],
+      "id": "fetch-ph",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "PH_CREDENTIAL_ID_HERE",
+          "name": "Product Hunt Token"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch",
+        "output": "input2"
+      },
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        0
+      ],
+      "id": "merge-data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Access Configuration\nconst config = $('Config').first().json;\n// Ideally, store the Dashboard Auth Token in n8n Credentials and access via $env or specific node credential\n// For this refactor, we assume it is set securely or passed here.\nconst dashboardAuth = 'n8n-rocks!'; \n\nconst updates = [];\n\n// Helper to format numbers with commas\nconst fmt = (num) => num ? num.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, \",\") : \"0\";\n// Helper to round\nconst round = (num) => num ? parseFloat(num.toFixed(2)) : 0.0;\n\n// --- Process Docker ---\ntry {\n  const docker = $('Retrieve Docker Data').first().json;\n  if (docker && !docker.error) {\n    updates.push(\n      { endpoint: 'docker_pulls', payload: { auth_token: dashboardAuth, current: fmt(docker.pull_count) } },\n      { endpoint: 'docker_stars', payload: { auth_token: dashboardAuth, current: fmt(docker.star_count) } }\n    );\n  }\n} catch (e) {}\n\n// --- Process GitHub ---\ntry {\n  const gh = $('Retrieve GitHub Data').first().json;\n  if (gh && !gh.error) {\n    updates.push(\n      { endpoint: 'github_stars', payload: { auth_token: dashboardAuth, current: fmt(gh.stargazers_count) } },\n      { endpoint: 'github_watchers', payload: { auth_token: dashboardAuth, current: fmt(gh.subscribers_count) } },\n      { endpoint: 'github_forks', payload: { auth_token: dashboardAuth, current: fmt(gh.forks_count) } },\n      { endpoint: 'github_open_issues', payload: { auth_token: dashboardAuth, current: fmt(gh.open_issues_count) } }\n    );\n  }\n} catch (e) {}\n\n// --- Process NPM ---\ntry {\n  const npm = $('Retrieve npm Data').first().json;\n  if (npm && !npm.error && npm.score) {\n    updates.push(\n      { endpoint: 'npm_maintenance', payload: { auth_token: dashboardAuth, value: round(npm.score.detail.maintenance) } },\n      { endpoint: 'npm_popularity', payload: { auth_token: dashboardAuth, value: round(npm.score.detail.popularity) } },\n      { endpoint: 'npm_quality', payload: { auth_token: dashboardAuth, value: round(npm.score.detail.quality) } },\n      { endpoint: 'npm_final', payload: { auth_token: dashboardAuth, value: round(npm.score.final) } }\n    );\n  }\n} catch (e) {}\n\n// --- Process Product Hunt ---\ntry {\n  const ph = $('Retrieve Product Hunt Data').first().json;\n  if (ph && !ph.error && ph.data && ph.data.post) {\n    const post = ph.data.post;\n    updates.push(\n      { endpoint: 'prod_hunt_rating', payload: { auth_token: dashboardAuth, value: post.reviewsRating } },\n      { endpoint: 'prod_hunt_reviews', payload: { auth_token: dashboardAuth, current: fmt(post.reviewsCount) } },\n      { endpoint: 'prod_hunt_votes', payload: { auth_token: dashboardAuth, current: fmt(post.votesCount) } },\n      { endpoint: 'prod_hunt_comments', payload: { auth_token: dashboardAuth, current: fmt(post.commentsCount) } }\n    );\n  }\n} catch (e) {}\n\nreturn updates;"
+      },
+      "name": "Normalize & Aggregate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "normalize-data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.dashboardHostname }}/widgets/{{ $json.endpoint }}",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "auth_token",
+              "value": "={{ $json.payload.auth_token }}"
+            },
+            {
+              "name": "current",
+              "value": "={{ $json.payload.current }}"
+            },
+            {
+              "name": "value",
+              "value": "={{ $json.payload.value }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Push to Dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1320,
+        0
+      ],
+      "id": "push-dashboard"
+    },
+    {
+      "parameters": {},
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        220,
+        400
+      ],
+      "id": "error-trigger"
+    },
+    {
+      "parameters": {
+        "message": "=Workflow Failed: {{ $json.message }}",
+        "level": "error"
+      },
+      "name": "Log Error",
+      "type": "n8n-nodes-base.n8nLog",
+      "typeVersion": 1,
+      "position": [
+        440,
+        400
+      ],
+      "id": "log-error"
+    }
+  ],
+  "connections": {
+    "Schedule (Hourly)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Retrieve Docker Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Retrieve npm Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Retrieve GitHub Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Retrieve Product Hunt Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve Docker Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve npm Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Retrieve GitHub Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Retrieve Product Hunt Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize & Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Push to Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
