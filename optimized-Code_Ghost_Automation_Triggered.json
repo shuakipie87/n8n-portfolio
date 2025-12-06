@@ -1,0 +1,417 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 1. Ingestion & Pre-processing\nHandles file upload, text extraction, and token safety truncation.",
+        "height": 296,
+        "width": 365,
+        "color": 3
+      },
+      "id": "58a4923b-3e8f-4abd-bebc-6488f8b04101",
+      "name": "Sticky Note - Ingestion",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2. AI Generation\nLangChain Agent analyzes text and generates structured JSON content.",
+        "height": 296,
+        "width": 469,
+        "color": 4
+      },
+      "id": "eb0ec98a-9c9d-4203-9586-9e81e23e7232",
+      "name": "Sticky Note - AI",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3. Publication & Response\nValidates output, posts to Ghost, and provides immediate feedback to the user.",
+        "height": 435,
+        "width": 781,
+        "color": 6
+      },
+      "id": "b2d3cb70-4335-43a2-80db-889559ebf020",
+      "name": "Sticky Note - Publish",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        940,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "path": "pdf",
+        "formTitle": "PDF to Blog Converter",
+        "formDescription": "Upload a PDF to generate a formatted Ghost blog post automatically.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Upload PDF File",
+              "fieldType": "file",
+              "acceptFileTypes": ".pdf",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "responseMode": "responseNode"
+        }
+      },
+      "id": "766daeb8-23e8-4ee9-acee-ea2a787bbfda",
+      "name": "Upload PDF",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [
+        60,
+        60
+      ],
+      "webhookId": "88b8f2a1-1234-4567-890a-bcdef1234567"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "Upload_PDF_File"
+      },
+      "id": "055a734e-7128-487a-b109-a64214010bb2",
+      "name": "Extract Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        280,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "title": "={{ $json.title }}",
+        "content": "={{ $json.content }}",
+        "source": "adminApi",
+        "operation": "create",
+        "additionalFields": {
+          "status": "draft",
+          "tags": [
+            "AI Generated"
+          ]
+        }
+      },
+      "id": "44256745-276a-4c88-80b6-d12a568d07e9",
+      "name": "Post to Ghost",
+      "type": "n8n-nodes-base.ghost",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        -20
+      ],
+      "credentials": {
+        "ghostAdminApi": {
+          "id": "GHOST_API_CREDENTIAL_ID",
+          "name": "Ghost Admin API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "responseFormat": "json_object",
+          "temperature": 0.7
+        }
+      },
+      "id": "9796d4eb-e9d6-43bb-80c0-c527f3dc8843",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        540,
+        240
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_API_CREDENTIAL_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n    \"title\": \"The Generated Title\",\n    \"content\": \"<h1>Header</h1><p>Body content...</p>\"\n}"
+      },
+      "id": "719e7578-df85-441c-8d2f-cb7d3f7bb92f",
+      "name": "Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        700,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\n  const input = $input.all()[0];\n  // Access the Agent output. LangChain nodes usually output text or an object based on parser.\n  // We expect a JSON object inside the output due to the parser.\n  const agentOutput = input.json.output;\n  \n  // Handle cases where agentOutput might be a stringified JSON or already an object\n  let data = agentOutput;\n  if (typeof agentOutput === 'string') {\n      try {\n          data = JSON.parse(agentOutput);\n      } catch (e) {\n          // If parsing fails, try finding JSON substring\n          const match = agentOutput.match(/\\{.*\\}/s);\n          if (match) data = JSON.parse(match[0]);\n      }\n  }\n\n  if (!data || !data.title || !data.content) {\n    throw new Error('LLM output missing required title or content fields');\n  }\n\n  // Sanitation\n  const title = data.title.trim();\n  let content = data.content.replace(/<h1>.*?<\\/h1>/s, '').trim(); // Remove duplicate H1 if present\n\n  return { \n    json: { \n      success: true, \n      title, \n      content \n    } \n  };\n\n} catch (error) {\n  return { \n    json: { \n      success: false, \n      error: error.message,\n      timestamp: new Date().toISOString()\n    } \n  };\n}"
+      },
+      "id": "5f16e695-3585-468f-8fcb-794f5e3b56d4",
+      "name": "Validate & Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "aaf83c73-65f3-4a88-87f3-25b1acaf93ef",
+              "leftValue": "={{ $json.success }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e4d41cf6-575d-469a-a7c5-fba0fc1cc568",
+      "name": "Success Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.text }}",
+        "options": {
+          "systemMessage": "=You are an expert SEO Blog Writer. \n\nAnalyze the provided text. Return a JSON object strictly adhering to the structure: { \"title\": \"...\", \"content\": \"...\" }.\n\n## Requirements:\n1. Title: < 10 words, engaging, no colons.\n2. Content: HTML format (use <h2>, <p>, <blockquote>, <ul>). NO markdown blocks (```html). Just the raw HTML string.\n3. Structure: Intro, 6-8 Chapters, Conclusion.\n4. Tone: Professional, authoritative, original."
+        },
+        "hasOutputParser": true
+      },
+      "id": "20b12b54-d329-4c70-9fa2-0dc598477a66",
+      "name": "Agent - Blog Writer",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        740,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Truncate text to prevent token overflow (approx 15k chars)\nconst MAX_CHARS = 15000;\nconst items = $input.all();\n\nreturn items.map(item => {\n  const text = item.json.text || '';\n  if (text.length > MAX_CHARS) {\n    item.json.text = text.substring(0, MAX_CHARS) + '\\n[...Text Truncated for Processing...]';\n    item.json.truncated = true;\n  } else {\n    item.json.truncated = false;\n  }\n  return item;\n});"
+      },
+      "id": "343b8173-631d-4001-9031-4043236e65a2",
+      "name": "Truncate Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=\\<!DOCTYPE html>\n<html>\n<head>\n  <title>Success!</title>\n  <style>\n    body { font-family: sans-serif; text-align: center; padding: 50px; background: #f4f4f4; }\n    .card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: inline-block; }\n    h1 { color: #2ecc71; }\n    a { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #333; color: white; text-decoration: none; border-radius: 5px; }\n  </style>\n</head>\n<body>\n  <div class=\"card\">\n    <h1>Blog Post Created!</h1>\n    <p>Your PDF has been successfully converted and drafted in Ghost.</p>\n    <p><strong>Title:</strong> {{ $json.title }}</p>\n    <a href=\"{{ $json.url }}\" target=\"_blank\">View Draft Post</a>\n  </div>\n</body>\n</html>",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "8c3b4412-1111-4222-3333-444455556666",
+      "name": "Response - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=\\<!DOCTYPE html>\n<html>\n<head>\n  <title>Generation Failed</title>\n  <style>\n    body { font-family: sans-serif; text-align: center; padding: 50px; background: #fff0f0; }\n    .card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: inline-block; }\n    h1 { color: #e74c3c; }\n    p { color: #666; }\n  </style>\n</head>\n<body>\n  <div class=\"card\">\n    <h1>Processing Error</h1>\n    <p>We could not generate the blog post.</p>\n    <p><strong>Reason:</strong> {{ $json.error || 'Unknown Error' }}</p>\n    <p><a href=\"javascript:history.back()\">Try Again</a></p>\n  </div>\n</body>\n</html>",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "9d4c5523-2222-5333-4444-555566667777",
+      "name": "Response - Failure",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        200
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-e5f6-4789-8090-abcdef123456",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        940,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=\\<!DOCTYPE html>\n<html>\n<body>\n<h1>System Error</h1>\n<p>An unexpected error occurred in the automation workflow.</p>\n<p>{{ $json.message }}</p>\n</body>\n</html>",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "b2c3d4e5-f6a7-4890-9012-bcdef1234567",
+      "name": "Response - System Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        360
+      ]
+    }
+  ],
+  "connections": {
+    "Upload PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        [
+          {
+            "node": "Truncate Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Truncate Text": {
+      "main": [
+        [
+          {
+            "node": "Agent - Blog Writer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agent - Blog Writer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Agent - Blog Writer",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent - Blog Writer": {
+      "main": [
+        [
+          {
+            "node": "Validate & Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Format": {
+      "main": [
+        [
+          {
+            "node": "Success Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success Check": {
+      "main": [
+        [
+          {
+            "node": "Post to Ghost",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response - Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Ghost": {
+      "main": [
+        [
+          {
+            "node": "Response - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Response - System Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

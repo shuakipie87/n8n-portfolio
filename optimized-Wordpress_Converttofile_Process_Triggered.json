@@ -1,0 +1,291 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "c3f63a01-1450-4f97-ab2d-16414613f50c",
+      "name": "When clicking ‘Test workflow’",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        180,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "status": "publish"
+        },
+        "operation": "getAll",
+        "returnAll": true
+      },
+      "id": "bc725e33-353d-4b3d-b65f-eb295053e5cc",
+      "name": "Get Wordpress Posts",
+      "type": "n8n-nodes-base.wordpress",
+      "typeVersion": 1,
+      "position": [
+        400,
+        240
+      ],
+      "notes": "Fetches posts. \n(Ideally use pagination for >10k posts)"
+    },
+    {
+      "parameters": {
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "39ade710-ebe5-4c4d-9bc8-5ad86a3c76b5",
+              "name": "id",
+              "type": "number",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "id": "2714c21d-5ad3-408b-b91d-aa4513f384f3",
+              "name": "title",
+              "type": "string",
+              "value": "={{ $json.title.rendered }}"
+            },
+            {
+              "id": "71194450-c5c6-4bf0-8a33-5aa88d02ddf4",
+              "name": "link",
+              "type": "string",
+              "value": "={{ $json.link }}"
+            },
+            {
+              "id": "69b5c680-965e-4078-809d-74b10da1a29f",
+              "name": "content",
+              "type": "string",
+              "value": "={{ $json.content.rendered }}"
+            }
+          ]
+        }
+      },
+      "id": "07ed3f2a-c2b6-4e3c-80d7-425adc6ad36d",
+      "name": "Format Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        840,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "234d6755-e862-4277-b0b7-1ac65cd87c12",
+      "name": "Convert to CSV",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1280,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "name": "={{ 'Wordpress_Posts_' + $now.toFormat('yyyy-MM-dd_HH-mm') + '.csv' }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "options": {},
+        "folderId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "root",
+          "cachedResultUrl": "https://drive.google.com/drive",
+          "cachedResultName": "/ (Root folder)"
+        },
+        "authentication": "serviceAccount"
+      },
+      "id": "49901cd8-5ef5-41b5-87c3-a5979cf11644",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1500,
+        240
+      ],
+      "notes": "Dynamic Filename Applied"
+    },
+    {
+      "parameters": {
+        "content": "### Optimization & Refactor Notes\n1. **Scalability:** Implemented `SplitInBatches` (Loop) to process posts in chunks of 50. This prevents memory overflows during the JSON transformation phase.\n2. **Robustness:** Added `Merge Batches` to reliably collect all processed items before CSV generation.\n3. **File Management:** Added dynamic timestamp to filename (e.g., `Wordpress_Posts_2023-10-27.csv`).\n4. **Error Handling:** Added Error Trigger to catch and log failures.",
+        "height": 283,
+        "width": 365
+      },
+      "id": "a36bccd7-9298-4c96-8f4e-83b9096e53dd",
+      "name": "Architect Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        620,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 50,
+        "options": {}
+      },
+      "id": "a1b2c3d4-e5f6-4789-8012-34567890abcdef",
+      "name": "Loop Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        620,
+        240
+      ],
+      "notes": "Process 50 items at a time"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all executions from the 'Format Fields' node inside the loop\nreturn $('Format Fields').all();"
+      },
+      "id": "1a2b3c4d-5e6f-7890-1234-567890abcdef",
+      "name": "Merge Batches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        240
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "98765432-10fe-4cba-8012-fedcba987654",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        400,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "log_msg",
+              "name": "message",
+              "type": "string",
+              "value": "Workflow Execution Failed"
+            },
+            {
+              "id": "timestamp",
+              "name": "timestamp",
+              "type": "string",
+              "value": "={{ $now }}"
+            },
+            {
+              "id": "error_detail",
+              "name": "error",
+              "type": "string",
+              "value": "={{ $execution.error.message }}"
+            }
+          ]
+        }
+      },
+      "id": "12345678-abcd-4321-ef09-876543210fed",
+      "name": "Log Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        620,
+        500
+      ],
+      "notes": "Mock Notification (Slack/Email)"
+    }
+  ],
+  "connections": {
+    "When clicking ‘Test workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get Wordpress Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Wordpress Posts": {
+      "main": [
+        [
+          {
+            "node": "Loop Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Batches": {
+      "main": [
+        [
+          {
+            "node": "Format Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Fields": {
+      "main": [
+        [
+          {
+            "node": "Loop Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Batches": {
+      "main": [
+        [
+          {
+            "node": "Convert to CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to CSV": {
+      "main": [
+        [
+          {
+            "node": "Upload to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

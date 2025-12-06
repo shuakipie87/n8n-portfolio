@@ -1,0 +1,574 @@
+{
+  "name": "## Form - Screaming Frog Upload",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Form - Screaming Frog Upload\nTrigger the workflow by uploading your **internal_html.csv** or **internal_all.csv** export.\n\n**New:** Use the checkbox to enable AI filtering for better precision.",
+        "height": 188,
+        "width": 376,
+        "color": 7
+      },
+      "id": "3cde69c5-ebfb-44b0-84d6-11df69212adf",
+      "name": "Sticky Note - Form",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        -480
+      ]
+    },
+    {
+      "parameters": {
+        "formTitle": "llms.txt Generator",
+        "formDescription": "Generate an AI-ready llms.txt file from a Screaming Frog export.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Website Name",
+              "placeholder": "e.g. My Awesome Site",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Short Description",
+              "placeholder": "e.g. Documentation for our API",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Enable AI Filtering?",
+              "fieldType": "boolean",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Screaming Frog Export (CSV)",
+              "fieldType": "file",
+              "acceptFileTypes": ".csv",
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {
+          "buttonLabel": "Generate llms.txt"
+        }
+      },
+      "id": "2a2de75e-598a-4242-8aba-72b82ddc9f08",
+      "name": "Form Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        -1776,
+        -64
+      ],
+      "webhookId": "4654c709-25eb-45b6-90af-9745e142c06e"
+    },
+    {
+      "parameters": {
+        "binaryPropertyName": "Screaming Frog Export (CSV)",
+        "options": {}
+      },
+      "id": "c14f712f-4b73-4bc3-8b09-0c1597bb05a8",
+      "name": "Extract CSV Data",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -1552,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0e7d4a06-83fc-4834-93fe-2e758cbe2307",
+              "name": "url",
+              "type": "string",
+              "value": "={{ $json.Address || $json.Adresse || $json.Dirección || $json.Indirizzo }}"
+            },
+            {
+              "id": "c82f4d4c-9d0b-4c7d-9647-5d0240b58643",
+              "name": "title",
+              "type": "string",
+              "value": "={{ $json['Title 1'] || $json['Titolo 1'] || $json['Titolo 1'] || $json['Título 1'] || $json['Titel 1'] }}"
+            },
+            {
+              "id": "abea81db-ce3b-4ac1-bd21-09ccfffb567a",
+              "name": "description",
+              "type": "string",
+              "value": "={{ $json['Meta Description 1'] || $json['Meta description 1'] }}"
+            },
+            {
+              "id": "2ca75d74-70f8-400b-b862-9da186135915",
+              "name": "statut",
+              "type": "string",
+              "value": "={{ $json['Status Code'] || $json['Code HTTP'] || $json['Status-Code'] || $json['Código de respuesta'] || $json['Codice di stato']}}"
+            },
+            {
+              "id": "754d3202-38b0-4d79-ba24-8078b3244307",
+              "name": "indexability",
+              "type": "string",
+              "value": "={{ $json.Indexability || $json.Indexabilité || $json.Indicizzabilità || $json.Indexabilidad || $json.Indexierbarkeit}}"
+            },
+            {
+              "id": "8bc6583d-bb34-4d22-b310-fe79bb8ac85d",
+              "name": "content_type",
+              "type": "string",
+              "value": "={{ $json['Content Type'] || $json['Type de contenu'] || $json['Tipo di contenuto'] || $json['Tipo de contenido'] || $json['Inhaltstyp']}}"
+            },
+            {
+              "id": "c874ba1a-769e-43d3-9555-8c9914ca9b76",
+              "name": "word_count",
+              "type": "string",
+              "value": "={{ $json['Word Count'] || $json['Nombre de mots'] || $json['Conteggio delle parole'] || $json['Recuento de palabras'] || $json['Wortanzahl'] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "872f203b-d699-4810-8d19-237d12ce955b",
+      "name": "Normalize Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1328,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cef4feaa-1c46-45b1-92b7-f5c2051b1dc5",
+              "leftValue": "={{ Number($json.statut) }}",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              },
+              "rightValue": 200
+            },
+            {
+              "id": "bb821656-9740-4da4-8aa9-f65ad098c470",
+              "leftValue": "={{ [\"Indexable\", \"Indicizzabile\", \"Indexierbar\"].includes($json.indexability) }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            },
+            {
+              "id": "5c93ddb8-8091-406a-bc04-fa14e8b73fb9",
+              "leftValue": "={{ $json.content_type }}",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              },
+              "rightValue": "text/html"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b574ef4b-7bab-479d-a9b6-a84b6d389a47",
+      "name": "Basic Filters",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -1120,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1906960d-77c8-472d-8051-54c7d2426639",
+              "leftValue": "={{ $json['Enable AI Filtering?'] }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6b6e72f6-6f3f-4462-bb51-82330e1beff8",
+      "name": "Enable AI?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -896,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 50,
+        "options": {}
+      },
+      "id": "e47b1656-1309-4e49-8150-511b3e38f825",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -656,
+        -224
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "id": "90487977-d80b-4980-9958-65aad3644bb3",
+      "name": "OpenAI Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -480,
+        -32
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YHlJ5KLaRx7HCJ8J",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputText": "=url : {{ $json.url }}\ntitle : {{ $json.title }}\ndescription : {{ $json.description }}\nwords count : {{ $json.word_count }}",
+        "categories": {
+          "categories": [
+            {
+              "category": "useful_content",
+              "description": "Pages that are likely to contain high-quality content, suitable for LLM context."
+            },
+            {
+              "category": "other_content",
+              "description": "Pages to exclude (pagination, low-value, login pages)."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cbfe298d-7fab-448a-aae0-345c578c51a4",
+      "name": "Text Classifier",
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        -224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate useful results from the classifier loop\n// 'Text Classifier' output index 0 corresponds to 'useful_content'\nconst items = $('Text Classifier').all(0, 0).map(i => i.json);\nreturn items;"
+      },
+      "id": "ee3f0e17-32a9-463c-b2a5-d94aa0212491",
+      "name": "Aggregate AI Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -208
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "38d5d7da-16e5-46ef-84f7-e7bc7700afdc",
+      "name": "Merge Paths",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        48,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "95e75caa-8110-476b-9cb1-73c15361fa56",
+              "name": "llmTxtRow",
+              "type": "string",
+              "value": "=- [{{ $json.title }}]({{ $json.url }}){{ $json.description ? ': ' + $json.description : '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9f910ff4-af73-40ea-a54e-26313a60efc6",
+      "name": "Format Row",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        272,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "fieldsToSummarize": {
+          "values": [
+            {
+              "aggregation": "concatenate",
+              "field": "llmTxtRow",
+              "separateBy": "\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "65772bdc-3d4c-4d99-bca4-31af80bca65c",
+      "name": "Concatenate All",
+      "type": "n8n-nodes-base.summarize",
+      "typeVersion": 1.1,
+      "position": [
+        496,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "97062a99-e944-4e1e-89b1-62cf9e3462dd",
+              "name": "llmsTxtFile",
+              "type": "string",
+              "value": "=# {{ $('Form Trigger').item.json['Website Name'] }}\n> {{ $('Form Trigger').item.json['Short Description'] }}\n\n{{ $json.concatenated_llmTxtRow }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bff6a434-75d3-4c22-9316-c6612a62eb6d",
+      "name": "Create File Content",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        720,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "llmsTxtFile",
+        "options": {
+          "encoding": "utf8",
+          "fileName": "llms.txt"
+        }
+      },
+      "id": "c3baaba7-6daf-4808-bf71-3c1869ed933e",
+      "name": "Convert to File",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        928,
+        -64
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Form Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract CSV Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract CSV Data": {
+      "main": [
+        [
+          {
+            "node": "Normalize Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Fields": {
+      "main": [
+        [
+          {
+            "node": "Basic Filters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic Filters": {
+      "main": [
+        [
+          {
+            "node": "Enable AI?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enable AI?": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Paths",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "Text Classifier",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Aggregate AI Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Text Classifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Classifier": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate AI Results": {
+      "main": [
+        [
+          {
+            "node": "Merge Paths",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Paths": {
+      "main": [
+        [
+          {
+            "node": "Format Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Row": {
+      "main": [
+        [
+          {
+            "node": "Concatenate All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Concatenate All": {
+      "main": [
+        [
+          {
+            "node": "Create File Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create File Content": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "26a84ed7-0dce-49b5-80e7-cb9c350b5693",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7c9587012d63e2d42653a46bd0fbfc2b6788b0b347581abbd8fc55d8bc1fae57"
+  },
+  "id": "k6cSU6seSZRa8AF3",
+  "tags": []
+}

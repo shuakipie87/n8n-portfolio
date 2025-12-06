@@ -1,0 +1,834 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "52bdf7eb-ee1a-43c5-a0ad-199283003892",
+      "name": "When clicking ‘Test workflow’",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "limit": 20,
+        "keyword": "looking for a solution",
+        "subreddit": "smallbusiness",
+        "additionalFields": {
+          "sort": "hot"
+        }
+      },
+      "id": "72b30080-e1f2-48b4-b816-ff43542cc6f1",
+      "name": "Get Reddit Posts",
+      "type": "n8n-nodes-base.reddit",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ],
+      "credentials": {
+        "redditOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID_HERE",
+          "name": "Reddit account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0823d10a-ad54-4d82-bcea-9dd236e97857",
+              "leftValue": "={{ $json.ups }}",
+              "operator": {
+                "operation": "gt",
+                "type": "number"
+              },
+              "rightValue": 2
+            },
+            {
+              "id": "bb8187aa-f0f1-4999-8d4b-bdc9abba0618",
+              "leftValue": "={{ $json.selftext }}",
+              "operator": {
+                "operation": "notEmpty",
+                "singleValue": true,
+                "type": "string"
+              },
+              "rightValue": ""
+            },
+            {
+              "id": "539f0f5c-025a-4f82-9b3a-2ef1ad3a2d96",
+              "leftValue": "={{ DateTime.fromSeconds($json.created).toISO() }}",
+              "operator": {
+                "operation": "after",
+                "type": "dateTime"
+              },
+              "rightValue": "={{ $today.minus(180,'days').toISO() }}"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b7326fd0-5379-42ac-b355-ef6c3c1790f9",
+      "name": "Filter High Value",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e5082ecc-3add-474e-bdb5-b8ad64729930",
+              "name": "upvotes",
+              "type": "number",
+              "value": "={{ $json.ups }}"
+            },
+            {
+              "id": "a92b5859-fbcc-40c2-95e0-452b12530d98",
+              "name": "subreddit_subscribers",
+              "type": "number",
+              "value": "={{ $json.subreddit_subscribers }}"
+            },
+            {
+              "id": "a846e21c-6cff-4521-9e0c-a32fa1305376",
+              "name": "postcontent",
+              "type": "string",
+              "value": "={{ $json.selftext }}"
+            },
+            {
+              "id": "b8045389-684d-4872-9e32-9a6b5511eb2b",
+              "name": "url",
+              "type": "string",
+              "value": "={{ $json.url }}"
+            },
+            {
+              "id": "f182fedc-1b09-40fe-aeb5-2473263da442",
+              "name": "date",
+              "type": "string",
+              "value": "={{ DateTime.fromSeconds($json.created).toISO() }}"
+            },
+            {
+              "id": "unique_id",
+              "name": "post_id",
+              "type": "string",
+              "value": "={{ $json.name }}"
+            }
+          ]
+        }
+      },
+      "id": "efede239-eff5-4e38-b40d-3cefea040644",
+      "name": "Standardize Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 5,
+        "options": {}
+      },
+      "id": "12345678-split-batc-hes0-000000000001",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "responseFormat": {
+            "values": {
+              "type": "json_object"
+            }
+          }
+        }
+      },
+      "id": "e9a000b6-2f35-4928-a8d8-aa2d8cc27513",
+      "name": "OpenAI Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1140,
+        540
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "prompt": "=Analyze the following Reddit post. Determine if it describes a specific business problem or a need for a solution.\n\nReturn a valid JSON object strictly in this format:\n{\n  \"post_id\": \"{{ $json.post_id }}\",\n  \"is_business_problem\": \"yes\" or \"no\"\n}\n\nPost Content:\n\"{{ $json.postcontent }}\"",
+        "messages": {}
+      },
+      "id": "1a99fdaa-6857-4210-a695-71ce531c1fa0",
+      "name": "AI Classify Problem",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        1200,
+        320
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Safe parser to handle AI string output or pre-parsed object\ntry {\n  const content = $input.item.json.text || $input.item.json.response || $input.item.json.message.content;\n  const parsed = typeof content === 'object' ? content : JSON.parse(content);\n  return { ...$input.item.json, ...parsed };\n} catch (e) {\n  return { ...$input.item.json, error: 'Parse Error', is_business_problem: 'no' };\n}"
+      },
+      "id": "parse-json-classify",
+      "name": "Parse Classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d5d38c01-3a88-4767-b488-d9c04145bb8f",
+              "leftValue": "={{ $json.is_business_problem }}",
+              "operator": {
+                "name": "filter.operator.equals",
+                "operation": "equals",
+                "type": "string"
+              },
+              "rightValue": "yes"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "11c45f28-97c0-4087-975c-651f27438956",
+      "name": "Is Business Problem?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1640,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "prompt": "=Summarize the following Reddit post into a concise business opportunity summary.\n\nReturn a valid JSON object strictly in this format:\n{\n  \"post_id\": \"{{ $json.post_id }}\",\n  \"summary\": \"...your summary here...\"\n}\n\nPost Content:\n{{ $json.postcontent }}",
+        "messages": {}
+      },
+      "id": "9bcbd874-5eed-47ce-9714-1aec71537fe2",
+      "name": "AI Summarize",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        1920,
+        100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "prompt": "=Suggest a viable business solution or service idea for the problem described in this post.\n\nReturn a valid JSON object strictly in this format:\n{\n  \"post_id\": \"{{ $json.post_id }}\",\n  \"solution\": \"...your solution here...\"\n}\n\nPost Content:\n{{ $json.postcontent }}",
+        "messages": {}
+      },
+      "id": "00d17970-3195-4290-bb02-9956f31ecc8f",
+      "name": "AI Solution",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        1920,
+        320
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "prompt": "=Analyze the sentiment of this post.\n\nReturn a valid JSON object strictly in this format:\n{\n  \"post_id\": \"{{ $json.post_id }}\",\n  \"sentiment\": \"Positive\" or \"Neutral\" or \"Negative\"\n}\n\nPost Content:\n{{ $json.postcontent }}",
+        "messages": {}
+      },
+      "id": "ed68c267-9716-4930-b210-d1f1ae89d8c8",
+      "name": "AI Sentiment",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        1920,
+        540
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\n  const content = $input.item.json.text;\n  return JSON.parse(content);\n} catch (e) {\n  return { post_id: $input.item.json.post_id, error: 'AI Generation Failed' };\n}"
+      },
+      "id": "parse-ai-outputs",
+      "name": "Parse AI Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByFields",
+        "mergeByFields": [
+          "post_id"
+        ],
+        "options": {},
+        "numberInputs": 4
+      },
+      "id": "a0259ed2-0615-4e92-9e7e-cbff8c5bc0ce",
+      "name": "Merge Analyzed Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2400,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1C8grVByPo3osYiV5X1pWhEUR9NhBXJGXBE75wC5o6rE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1C8grVByPo3osYiV5X1pWhEUR9NhBXJGXBE75wC5o6rE/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Upvotes": "={{ $json.upvotes }}",
+            "Post_url": "={{ $json.url }}",
+            "Post_date": "={{ $json.date }}",
+            "Post_summary": "={{ $json.summary }}",
+            "Post_solution": "={{ $json.solution }}",
+            "Subreddit_size": "={{ $json.subreddit_subscribers }}",
+            "Sentiment": "={{ $json.sentiment }}"
+          },
+          "matchingColumns": [
+            "test"
+          ],
+          "schema": [
+            {
+              "id": "Subreddit_size",
+              "displayName": "Subreddit_size",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Post_date",
+              "displayName": "Post_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Upvotes",
+              "displayName": "Upvotes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Post_url",
+              "displayName": "Post_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Post_summary",
+              "displayName": "Post_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Post_solution",
+              "displayName": "Post_solution",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Sentiment",
+              "displayName": "Sentiment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f78fbea9-5f7f-4a88-bde1-7c3f01613892",
+      "name": "Save to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2620,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_G_SHEETS_CREDENTIAL",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.sentiment }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "Positive"
+            },
+            {
+              "value2": "Neutral"
+            },
+            {
+              "value2": "Negative"
+            }
+          ]
+        }
+      },
+      "id": "switch-sentiment",
+      "name": "Switch Sentiment",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        2840,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "Positive Post Opportunity",
+        "message": "={{ $json.postcontent }}\n\nSummary: {{ $json.summary }}",
+        "options": {}
+      },
+      "id": "2e651e62-00dd-4f0d-a8bc-ce4d8b9fa1d7",
+      "name": "Positive Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3100,
+        140
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "Neutral Post Analysis",
+        "message": "={{ $json.postcontent }}\n\nSummary: {{ $json.summary }}",
+        "options": {}
+      },
+      "id": "29d478d2-43d4-467a-89c2-8c97ea6e245c",
+      "name": "Neutral Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3100,
+        320
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "Negative Post Alert",
+        "message": "={{ $json.postcontent }}\n\nSummary: {{ $json.summary }}",
+        "options": {}
+      },
+      "id": "c289805f-5246-4f3a-9052-48c426da8ce0",
+      "name": "Negative Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3100,
+        500
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Optimized Architecture\n1. **Data Integrity**: Uses `Combine by Key` (post_id) in Merge node.\n2. **Robustness**: `SplitInBatches` added to handle rate limits. AI nodes have `Continue On Fail`.\n3. **Optimization**: Sentiment is calculated via AI JSON output and saved to Sheets.\n4. **Structure**: Logic is linear with explicit ID passing.",
+        "height": 400,
+        "width": 600
+      },
+      "id": "sticky-notes-arch",
+      "name": "Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        -100
+      ]
+    }
+  ],
+  "connections": {
+    "When clicking ‘Test workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get Reddit Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Reddit Posts": {
+      "main": [
+        [
+          {
+            "node": "Filter High Value",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter High Value": {
+      "main": [
+        [
+          {
+            "node": "Standardize Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Standardize Fields": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "AI Classify Problem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Classify Problem",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "AI Summarize",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "AI Solution",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "AI Sentiment",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Classify Problem": {
+      "main": [
+        [
+          {
+            "node": "Parse Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Classification": {
+      "main": [
+        [
+          {
+            "node": "Is Business Problem?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Business Problem?": {
+      "main": [
+        [
+          {
+            "node": "AI Summarize",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AI Solution",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AI Sentiment",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Analyzed Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Summarize": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Solution": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Sentiment": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Results": {
+      "main": [
+        [
+          {
+            "node": "Merge Analyzed Data",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Merge Analyzed Data",
+            "type": "main",
+            "index": 2
+          }
+        ],
+        [
+          {
+            "node": "Merge Analyzed Data",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge Analyzed Data": {
+      "main": [
+        [
+          {
+            "node": "Save to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Sheets": {
+      "main": [
+        [
+          {
+            "node": "Switch Sentiment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Sentiment": {
+      "main": [
+        [
+          {
+            "node": "Positive Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Neutral Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Negative Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Positive Draft": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Neutral Draft": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Negative Draft": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

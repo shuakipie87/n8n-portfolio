@@ -1,0 +1,627 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "ff77338e-4dac-4261-87a1-10a21108f543",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        880,
+        940
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "635901e5-4afd-4c81-a63e-52f1b863a025",
+      "name": "Chat Trigger",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -380,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "conf_1",
+              "name": "QDRANT_COLLECTION",
+              "value": "scarperia",
+              "type": "string"
+            },
+            {
+              "id": "conf_2",
+              "name": "QDRANT_URL",
+              "value": "https://your-qdrant-instance.com",
+              "type": "string"
+            },
+            {
+              "id": "conf_3",
+              "name": "GDRIVE_FOLDER_ID",
+              "value": "1lmnqpLFKS-gXmXT92C5VG0P1XlcoeFOb",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "05c93d2b-1111-4444-8888-222222222222",
+      "name": "Ingestion Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1100,
+        940
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.QDRANT_URL }}/collections/{{ $json.QDRANT_COLLECTION }}/points/delete",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"filter\": {}}",
+        "options": {},
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "72484893-875a-4e8b-83fc-ca137e812050",
+      "name": "Clear Collection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        940
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "list",
+        "useQueryString": true,
+        "queryString": "='{{ $(\"Ingestion Config\").item.json.GDRIVE_FOLDER_ID }}' in parents and trashed = false",
+        "options": {}
+      },
+      "id": "4ff30e15-1bf5-4750-a68a-e72f86a4f32c",
+      "name": "List Files",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1540,
+        940
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "e2e2e2e2-3333-4444-5555-666666666666",
+      "name": "Loop Files",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1760,
+        940
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": "={{ $json.id }}",
+        "options": {
+          "googleFileConversion": {
+            "conversion": {
+              "docsToFormat": "text/plain"
+            }
+          }
+        }
+      },
+      "id": "b4ca79b2-220b-4290-a33a-596250c8fd2d",
+      "name": "Download File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1980,
+        940
+      ]
+    },
+    {
+      "parameters": {
+        "chunkSize": 300,
+        "chunkOverlap": 30
+      },
+      "id": "f0d351e5-faee-49a4-a43c-985785c3d2c8",
+      "name": "Token Splitter",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterTokenSplitter",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        1160
+      ]
+    },
+    {
+      "parameters": {
+        "dataType": "binary",
+        "options": {}
+      },
+      "id": "43693ee0-a2a3-44d3-86de-4156af84e251",
+      "name": "Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1,
+      "position": [
+        2340,
+        1160
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "={{ $('Ingestion Config').item.json.QDRANT_COLLECTION }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "79baf424-e647-4a80-a19e-c023ad3b1860",
+      "name": "Upsert to Qdrant",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        940
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "18f5e068-ad4a-4be7-987c-83ed5791f012",
+      "name": "Embeddings Ingest",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.1,
+      "position": [
+        2200,
+        1280
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "conf_chat_1",
+              "name": "QDRANT_COLLECTION",
+              "value": "scarperia",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "ad6058dd-b429-4f3c-b68a-7e3d98beec83",
+      "name": "Chat Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -160,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "sessionKey": "={{ $('Chat Config').item.json.sessionId }}",
+        "sessionIdType": "customKey"
+      },
+      "id": "d11cd97c-1539-462d-858c-8758cf1a8278",
+      "name": "Window Buffer Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        520,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "02bb43e4-f26e-4906-8049-c49d3fecd817",
+      "name": "Calculator",
+      "type": "@n8n/n8n-nodes-langchain.toolCalculator",
+      "typeVersion": 1,
+      "position": [
+        740,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "name": "informazioni_negozio",
+        "description": "Store information: opening hours, address, contacts, general info."
+      },
+      "id": "8b5ec20d-8735-4030-8113-717d578928eb",
+      "name": "RAG Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1,
+      "position": [
+        860,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "={{ $('Chat Config').item.json.QDRANT_COLLECTION }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "0fd0f1d6-41df-43d4-9418-0685afad409a",
+      "name": "Qdrant Chat Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1,
+      "position": [
+        860,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "72084a2e-0e47-4723-a004-585ae8b67ae3",
+      "name": "Embeddings Chat",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.1,
+      "position": [
+        860,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "30d398a3-2331-4a3d-898d-c184779c7ef3",
+      "name": "OpenAI Chat Model RAG",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "options": {
+          "sku": "={{ $fromAI(\"sku\") }}",
+          "search": "={{ $fromAI(\"search\") }}",
+          "maxPrice": "={{ $fromAI(\"maxPrice\") }}",
+          "minPrice": "={{ $fromAI(\"minPrice\") }}",
+          "stockStatus": "instock"
+        }
+      },
+      "id": "e10a8024-51ec-4553-a1fa-dbaa49a4d2c2",
+      "name": "personal_shopper",
+      "type": "n8n-nodes-base.wooCommerceTool",
+      "typeVersion": 1,
+      "position": [
+        980,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "text": "={{ $('Chat Trigger').item.json.chatInput }}",
+        "options": {
+          "systemPromptTemplate": "You are an intelligent assistant for a shoe and accessories store.\n\n1. Analyze the input to check if the user is looking for a product.\n2. If looking for a product, extract keywords, price ranges, and SKU.\n3. Output a JSON with:\n   - search_intent: boolean\n   - search_params: { keyword, min_price, max_price, sku, category }\n"
+        },
+        "schemaType": "manual",
+        "inputSchema": "{\n \"search_intent\": true,\n \"search_params\": {\n  \"keyword\": \"string\",\n  \"min_price\": \"number\",\n  \"max_price\": \"number\",\n  \"sku\": \"string\",\n  \"category\": \"string\"\n }\n}"
+      },
+      "id": "f0c53b0d-7173-4ec9-8fb4-f8f45d9ceedc",
+      "name": "Information Extractor",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1,
+      "position": [
+        80,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "8386e554-e2f1-42c8-881f-a06e8099f718",
+      "name": "OpenAI Extractor Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.1,
+      "position": [
+        80,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "text": "={{ $('Chat Trigger').item.json.chatInput }}",
+        "options": {
+          "systemMessage": "=You are a store assistant. \n\nThe \"Information Extractor\" has analyzed the user's intent. \nOutput: {{ JSON.stringify($('Information Extractor').item.json) }}\n\nIf \"search_intent\" is true, use the \"personal_shopper\" tool to find products. Map the fields from the Extractor output (keyword -> search, min_price -> minPrice, etc.) to the tool arguments.\n\nIf the user asks general questions, use the \"RAG Tool\"."
+        },
+        "promptType": "define"
+      },
+      "id": "d4d1fb16-3f54-4c1a-ab4e-bcf86d897e9d",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        440,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "43f7ee25-4529-4558-b5ea-c2a722b0bce5",
+      "name": "OpenAI Agent Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        440,
+        360
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "99999999-9999-9999-9999-999999999999",
+      "name": "Global Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        880,
+        1200
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Ingestion Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingestion Config": {
+      "main": [
+        [
+          {
+            "node": "Clear Collection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Collection": {
+      "main": [
+        [
+          {
+            "node": "List Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Files": {
+      "main": [
+        [
+          {
+            "node": "Loop Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Files": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "Upsert to Qdrant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert to Qdrant": {
+      "main": [
+        [
+          {
+            "node": "Loop Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Upsert to Qdrant",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Ingest": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Upsert to Qdrant",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Chat Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Config": {
+      "main": [
+        [
+          {
+            "node": "Information Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Information Extractor": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Extractor Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Information Extractor",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "ai_memory": [
+        [
+          {
+            "node": "Window Buffer Memory",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_tool": [
+        [
+          {
+            "node": "Calculator",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "RAG Tool",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "personal_shopper",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_languageModel": [
+        [
+          {
+            "node": "OpenAI Agent Model",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Tool": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Qdrant Chat Store",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_languageModel": [
+        [
+          {
+            "node": "OpenAI Chat Model RAG",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Chat Store": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Embeddings Chat",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

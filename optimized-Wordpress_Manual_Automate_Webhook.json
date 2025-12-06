@@ -1,0 +1,709 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "c4a6995f-7769-4b77-80ca-1e6bccef77c1",
+      "name": "When clicking ‘Test workflow’",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "id"
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "YOURDOCUMENT",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "c76b1458-5130-41e7-b2f2-1cfe22eab536",
+      "name": "Get Ideas",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -60,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "SplitInBatches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        160,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3e8d2523-66aa-46fe-adcc-39dc78b9161e",
+              "name": "prompt",
+              "type": "string",
+              "value": "={{ $json.PROMPT }}"
+            },
+            {
+              "id": "row_number",
+              "name": "row_number",
+              "type": "number",
+              "value": "={{ $json.row_number }}"
+            }
+          ]
+        }
+      },
+      "id": "8d17a640-3e15-42e9-9481-e3291d395ccd",
+      "name": "Set Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        380,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "deepseek-reasoner",
+          "mode": "id"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are an SEO expert, write an article based on this topic:\n{{ $json.prompt }}\n\nInstructions:\n- Write a maximum of 4-5 chapters.\n- Use HTML for formatting (bold, italics, lists, h2, h3).\n- Do not include ```html tags.\n- Output only the HTML content body."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 2048
+        }
+      },
+      "id": "73b0e640-8ccf-4e29-a0cd-6340db907bbd",
+      "name": "Generate Article",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        580,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "deepseek-reasoner",
+          "mode": "id"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are an SEO Copywriter. Create a title (max 60 chars) for this article:\n{{ $json.message.content }}\n\nOutput only the title string. No quotes."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 2048
+        }
+      },
+      "id": "6ef4e0d1-6123-4f47-94fb-c06c785ddd92",
+      "name": "Generate Title",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        800,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "article_content",
+              "name": "article_content",
+              "type": "string",
+              "value": "={{ $('Generate Article').item.json.message.content }}"
+            },
+            {
+              "id": "article_title",
+              "name": "article_title",
+              "type": "string",
+              "value": "={{ $json.message.content }}"
+            },
+            {
+              "id": "row_number",
+              "name": "row_number",
+              "type": "number",
+              "value": "={{ $('Set Context').item.json.row_number }}"
+            }
+          ]
+        }
+      },
+      "id": "b2398512-1234-4321-abcd-1234567890ab",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1020,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.article_content }}",
+              "operation": "notEmpty"
+            },
+            {
+              "value1": "={{ $json.article_title }}",
+              "operation": "notEmpty"
+            }
+          ]
+        }
+      },
+      "id": "f1e2d3c4-b5a6-4978-8899-aabbccddeeff",
+      "name": "Verify Generation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "title": "={{ $json.article_title }}",
+        "additionalFields": {
+          "content": "={{ $json.article_content }}",
+          "status": "draft"
+        }
+      },
+      "id": "4f0e9065-b331-49ed-acd9-77c7c43e89a5",
+      "name": "Create WP Post",
+      "type": "n8n-nodes-base.wordpress",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.id }}",
+              "operation": "notEmpty"
+            }
+          ]
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Verify WP Post",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "prompt": "=Generate a realistic blog cover image for: {{ $('Aggregate Data').item.json.article_title }}",
+        "options": {
+          "quality": "hd",
+          "size": "1024x1024",
+          "style": "natural"
+        }
+      },
+      "id": "93c2d359-531a-4cc9-8a18-870c2d6ec62c",
+      "name": "Generate DALL-E Image",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        1900,
+        180
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.data[0].url }}",
+        "options": {
+          "response": {}
+        },
+        "nodeCredentialType": "wordpressApi"
+      },
+      "id": "d1e2f3a4-b5c6-47d8-9e0f-1a2b3c4d5e6f",
+      "name": "Download Image Binary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2120,
+        180
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOURSITE.com/wp-json/wp/v2/media",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wordpressApi",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Disposition",
+              "value": "=attachment; filename=\"cover-{{ $('Create WP Post').item.json.id }}.jpg\""
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cb85d980-9d60-4c85-8574-b46e4cc14341",
+      "name": "Upload Media to WP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2340,
+        180
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://YOURSITE.com/wp-json/wp/v2/posts/{{ $('Create WP Post').item.json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wordpressApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "featured_media",
+              "value": "={{ $json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bc71ed8a-fe35-487a-b4cd-6b8c1b256763",
+      "name": "Set Featured Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2560,
+        180
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Foglio1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16VFeCrE5BkMBoA_S5HD-9v7C0sxcXAUiDbq5JvkDqnI/edit#gid=0"
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "16VFeCrE5BkMBoA_S5HD-9v7C0sxcXAUiDbq5JvkDqnI",
+          "mode": "list",
+          "cachedResultName": "Plan Blog wp.test.7hype.com",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16VFeCrE5BkMBoA_S5HD-9v7C0sxcXAUiDbq5JvkDqnI/edit?usp=drivesdk"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "DATA": "={{ $now.format('dd/LL/yyyy') }}",
+            "TITOLO": "={{ $('Aggregate Data').item.json.article_title }}",
+            "ID POST": "={{ $('Create WP Post').item.json.id }}",
+            "row_number": "={{ $('Aggregate Data').item.json.row_number }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "DATA",
+              "displayName": "DATA",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "PROMPT",
+              "displayName": "PROMPT",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "TITOLO",
+              "displayName": "TITOLO",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "ID POST",
+              "displayName": "ID POST",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "removed": false,
+              "readOnly": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fbed2813-cc64-42a2-994f-3696e9d8d8fe",
+      "name": "Update Sheet (Success)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2780,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Foglio1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16VFeCrE5BkMBoA_S5HD-9v7C0sxcXAUiDbq5JvkDqnI/edit#gid=0"
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "16VFeCrE5BkMBoA_S5HD-9v7C0sxcXAUiDbq5JvkDqnI",
+          "mode": "list",
+          "cachedResultName": "Plan Blog wp.test.7hype.com",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16VFeCrE5BkMBoA_S5HD-9v7C0sxcXAUiDbq5JvkDqnI/edit?usp=drivesdk"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID POST": "FAILED",
+            "row_number": "={{ $('Set Context').item.json.row_number }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "DATA",
+              "displayName": "DATA",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "PROMPT",
+              "displayName": "PROMPT",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "TITOLO",
+              "displayName": "TITOLO",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "ID POST",
+              "displayName": "ID POST",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "removed": false,
+              "readOnly": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "99999999-error-node-0000-000000000000",
+      "name": "Update Sheet (Failed)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2780,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Optimization Highlights\n1. **SplitInBatches**: Processes rows individually to handle API rate limits and isolate errors.\n2. **Error Handling**: Critical nodes use 'Continue On Fail'. 'If' nodes check for success. If failed, it routes to 'Update Sheet (Failed)' to mark the row without stopping the whole workflow.\n3. **Image Logic**: Corrected flow: DALL-E (URL) -> HTTP Request (Download Binary) -> WP (Upload Binary) -> WP (Attach to Post).\n4. **Data Aggregation**: Uses 'Set Context' and 'Aggregate Data' nodes to pass variables cleanly, reducing brittle references.",
+        "height": 400,
+        "width": 500
+      },
+      "id": "8db2b0cb-6d61-4e2d-bfac-e25a0385296d",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        160,
+        -200
+      ]
+    }
+  ],
+  "connections": {
+    "When clicking ‘Test workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get Ideas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Ideas": {
+      "main": [
+        [
+          {
+            "node": "SplitInBatches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SplitInBatches": {
+      "main": [
+        [
+          {
+            "node": "Set Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Context": {
+      "main": [
+        [
+          {
+            "node": "Generate Article",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Article": {
+      "main": [
+        [
+          {
+            "node": "Generate Title",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Title": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Verify Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Generation": {
+      "main": [
+        [
+          {
+            "node": "Create WP Post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Sheet (Failed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create WP Post": {
+      "main": [
+        [
+          {
+            "node": "Verify WP Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify WP Post": {
+      "main": [
+        [
+          {
+            "node": "Generate DALL-E Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Sheet (Failed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate DALL-E Image": {
+      "main": [
+        [
+          {
+            "node": "Download Image Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image Binary": {
+      "main": [
+        [
+          {
+            "node": "Upload Media to WP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Media to WP": {
+      "main": [
+        [
+          {
+            "node": "Set Featured Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Featured Image": {
+      "main": [
+        [
+          {
+            "node": "Update Sheet (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Sheet (Success)": {
+      "main": [
+        [
+          {
+            "node": "SplitInBatches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Sheet (Failed)": {
+      "main": [
+        [
+          {
+            "node": "SplitInBatches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

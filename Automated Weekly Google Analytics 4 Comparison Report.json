@@ -1,0 +1,696 @@
+{
+  "name": "Automated Weekly Google Analytics 4 Comparison Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "id": "0f0c7d83-f6bc-4628-9a91-7405fae412db",
+      "name": "On Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -864,
+        272
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "bac2342c-b321-4bd3-ba6f-f9fa2f75492c",
+      "name": "Manual Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -864,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "prop-id",
+              "name": "ga_property_id",
+              "value": "420633845",
+              "type": "string"
+            },
+            {
+              "id": "email-to",
+              "name": "email_to",
+              "value": "info@alexk1919.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2399e643-05d5-469b-8a6f-974c3265957e",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -640,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "propertyId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.ga_property_id }}"
+        },
+        "metricsGA4": {
+          "metricValues": [
+            {
+              "listName": "other",
+              "name": "screenPageViews"
+            },
+            {
+              "listName": "other",
+              "name": "activeUsers"
+            },
+            {
+              "listName": "other",
+              "name": "screenPageViewsPerUser"
+            },
+            {
+              "listName": "other",
+              "name": "eventCount"
+            }
+          ]
+        },
+        "dimensionsGA4": {
+          "dimensionValues": [
+            {
+              "listName": "other",
+              "name": "unifiedScreenName"
+            }
+          ]
+        },
+        "returnAll": true,
+        "simple": false,
+        "additionalFields": {
+          "keepEmptyRows": true
+        }
+      },
+      "id": "87afd063-c070-4e79-b65f-0babc566fb86",
+      "name": "GA - Engagement (This Week)",
+      "type": "n8n-nodes-base.googleAnalytics",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "propertyId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.ga_property_id }}"
+        },
+        "metricsGA4": {
+          "metricValues": [
+            {
+              "listName": "other",
+              "name": "screenPageViews"
+            },
+            {
+              "listName": "other",
+              "name": "activeUsers"
+            },
+            {
+              "listName": "other",
+              "name": "screenPageViewsPerUser"
+            },
+            {
+              "listName": "other",
+              "name": "eventCount"
+            }
+          ]
+        },
+        "dimensionsGA4": {
+          "dimensionValues": [
+            {
+              "listName": "other",
+              "name": "unifiedScreenName"
+            }
+          ]
+        },
+        "returnAll": true,
+        "simple": false,
+        "additionalFields": {
+          "keepEmptyRows": true
+        }
+      },
+      "id": "19f4a640-d7d4-4137-8b44-8fbc2d2d9cdf",
+      "name": "GA - Engagement (Prior Week)",
+      "type": "n8n-nodes-base.googleAnalytics",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const thisWeek = $('GA - Engagement (This Week)').all().map(i => i.json);\nconst priorWeek = $input.all().map(i => i.json);\n\nfunction parseRows(rows) {\n  if (!rows || !Array.isArray(rows)) return [];\n  return rows.map(row => ({\n    page: row.dimensionValues?.[0]?.value || 'Unknown',\n    pageViews: parseInt(row.metricValues?.[0]?.value || 0),\n    activeUsers: parseInt(row.metricValues?.[1]?.value || 0),\n    viewsPerUser: parseFloat(row.metricValues?.[2]?.value || 0),\n    eventCount: parseInt(row.metricValues?.[3]?.value || 0)\n  })).filter(r => r.page !== 'Unknown');\n}\n\nreturn {\n  json: {\n    engagement: {\n      thisWeek: parseRows(thisWeek[0]?.rows),\n      priorWeek: parseRows(priorWeek[0]?.rows)\n    }\n  }\n};"
+      },
+      "id": "c14e5a18-d4e5-4a96-b0d4-c3c3db9b55be",
+      "name": "Process Engagement",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "propertyId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.ga_property_id }}"
+        },
+        "metricsGA4": {
+          "metricValues": [
+            {
+              "listName": "other",
+              "name": "activeUsers"
+            },
+            {
+              "listName": "other",
+              "name": "engagedSessions"
+            },
+            {
+              "listName": "other",
+              "name": "engagementRate"
+            },
+            {
+              "listName": "other",
+              "name": "eventCount"
+            },
+            {
+              "listName": "other",
+              "name": "organicGoogleSearchAveragePosition"
+            },
+            {
+              "listName": "other",
+              "name": "organicGoogleSearchClickThroughRate"
+            },
+            {
+              "listName": "other",
+              "name": "organicGoogleSearchClicks"
+            },
+            {
+              "listName": "other",
+              "name": "organicGoogleSearchImpressions"
+            }
+          ]
+        },
+        "dimensionsGA4": {
+          "dimensionValues": [
+            {
+              "listName": "other",
+              "name": "landingPagePlusQueryString"
+            }
+          ]
+        },
+        "returnAll": true,
+        "simple": false,
+        "additionalFields": {
+          "keepEmptyRows": true
+        }
+      },
+      "id": "a341c52b-192e-4f3c-a25d-479b6a953a30",
+      "name": "GA - Search (This Week)",
+      "type": "n8n-nodes-base.googleAnalytics",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "propertyId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.ga_property_id }}"
+        },
+        "metricsGA4": {
+          "metricValues": [
+            {
+              "listName": "other",
+              "name": "activeUsers"
+            },
+            {
+              "listName": "other",
+              "name": "engagedSessions"
+            },
+            {
+              "listName": "other",
+              "name": "engagementRate"
+            },
+            {
+              "listName": "other",
+              "name": "eventCount"
+            },
+            {
+              "listName": "other",
+              "name": "organicGoogleSearchAveragePosition"
+            },
+            {
+              "listName": "other",
+              "name": "organicGoogleSearchClickThroughRate"
+            },
+            {
+              "listName": "other",
+              "name": "organicGoogleSearchClicks"
+            },
+            {
+              "listName": "other",
+              "name": "organicGoogleSearchImpressions"
+            }
+          ]
+        },
+        "dimensionsGA4": {
+          "dimensionValues": [
+            {
+              "listName": "other",
+              "name": "landingPagePlusQueryString"
+            }
+          ]
+        },
+        "returnAll": true,
+        "simple": false,
+        "additionalFields": {
+          "keepEmptyRows": true
+        }
+      },
+      "id": "ac631699-5ca5-4df7-ae89-71a7f808902f",
+      "name": "GA - Search (Prior Week)",
+      "type": "n8n-nodes-base.googleAnalytics",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const thisWeek = $('GA - Search (This Week)').all().map(i => i.json);\nconst priorWeek = $input.all().map(i => i.json);\n\nfunction parseRows(rows) {\n  if (!rows || !Array.isArray(rows)) return [];\n  return rows.map(row => ({\n    page: row.dimensionValues?.[0]?.value || 'Unknown',\n    activeUsers: parseInt(row.metricValues?.[0]?.value || 0),\n    engagedSessions: parseInt(row.metricValues?.[1]?.value || 0),\n    engagementRate: parseFloat(row.metricValues?.[2]?.value || 0),\n    eventCount: parseInt(row.metricValues?.[3]?.value || 0),\n    avgPosition: parseFloat(row.metricValues?.[4]?.value || 0),\n    ctr: parseFloat(row.metricValues?.[5]?.value || 0),\n    clicks: parseInt(row.metricValues?.[6]?.value || 0),\n    impressions: parseInt(row.metricValues?.[7]?.value || 0)\n  })).filter(r => r.page !== 'Unknown');\n}\n\nreturn {\n  json: {\n    search: {\n      thisWeek: parseRows(thisWeek[0]?.rows),\n      priorWeek: parseRows(priorWeek[0]?.rows)\n    }\n  }\n};"
+      },
+      "id": "7f53a33a-09d5-42f1-b0d7-1a6a84d5065e",
+      "name": "Process Search",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "propertyId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.ga_property_id }}"
+        },
+        "metricsGA4": {
+          "metricValues": [
+            {
+              "listName": "other",
+              "name": "activeUsers"
+            },
+            {
+              "listName": "other",
+              "name": "newUsers"
+            },
+            {
+              "listName": "other",
+              "name": "engagementRate"
+            },
+            {
+              "listName": "other",
+              "name": "engagedSessions"
+            },
+            {
+              "listName": "other",
+              "name": "eventCount"
+            },
+            {
+              "listName": "other"
+            },
+            {
+              "listName": "other",
+              "name": "sessions"
+            }
+          ]
+        },
+        "dimensionsGA4": {
+          "dimensionValues": [
+            {
+              "listName": "other",
+              "name": "country"
+            }
+          ]
+        },
+        "returnAll": true,
+        "simple": false,
+        "additionalFields": {
+          "keepEmptyRows": true
+        }
+      },
+      "id": "f566f8dc-6bf7-4a69-8752-07276a6ac9f8",
+      "name": "GA - Country (This Week)",
+      "type": "n8n-nodes-base.googleAnalytics",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "propertyId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.ga_property_id }}"
+        },
+        "metricsGA4": {
+          "metricValues": [
+            {
+              "listName": "other",
+              "name": "activeUsers"
+            },
+            {
+              "listName": "other",
+              "name": "newUsers"
+            },
+            {
+              "listName": "other",
+              "name": "engagementRate"
+            },
+            {
+              "listName": "other",
+              "name": "engagedSessions"
+            },
+            {
+              "listName": "other",
+              "name": "eventCount"
+            },
+            {
+              "listName": "other"
+            },
+            {
+              "listName": "other",
+              "name": "sessions"
+            }
+          ]
+        },
+        "dimensionsGA4": {
+          "dimensionValues": [
+            {
+              "listName": "other",
+              "name": "country"
+            }
+          ]
+        },
+        "returnAll": true,
+        "simple": false,
+        "additionalFields": {
+          "keepEmptyRows": true
+        }
+      },
+      "id": "259d5596-5fa4-4f86-8e10-cf2790ad624b",
+      "name": "GA - Country (Prior Week)",
+      "type": "n8n-nodes-base.googleAnalytics",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const thisWeek = $('GA - Country (This Week)').all().map(i => i.json);\nconst priorWeek = $input.all().map(i => i.json);\n\nfunction parseRows(rows) {\n  if (!rows || !Array.isArray(rows)) return [];\n  return rows.map(row => ({\n    country: row.dimensionValues?.[0]?.value || 'Unknown',\n    activeUsers: parseInt(row.metricValues?.[0]?.value || 0),\n    newUsers: parseInt(row.metricValues?.[1]?.value || 0),\n    engagementRate: parseFloat(row.metricValues?.[2]?.value || 0),\n    engagedSessions: parseInt(row.metricValues?.[3]?.value || 0),\n    eventCount: parseInt(row.metricValues?.[4]?.value || 0),\n    totalUsers: parseInt(row.metricValues?.[5]?.value || 0),\n    sessions: parseInt(row.metricValues?.[6]?.value || 0)\n  })).filter(r => r.country !== 'Unknown');\n}\n\nreturn {\n  json: {\n    country: {\n      thisWeek: parseRows(thisWeek[0]?.rows),\n      priorWeek: parseRows(priorWeek[0]?.rows)\n    }\n  }\n};"
+      },
+      "id": "aeaf6f85-e45b-4b83-9fdb-f3987691d81a",
+      "name": "Process Country",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        464
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "43f4fec9-72ec-4074-a5ff-c7bd75e688d6",
+      "name": "Merge All Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        352,
+        208
+      ],
+      "mode": "combine",
+      "combinationMode": "mergeByPosition"
+    },
+    {
+      "parameters": {},
+      "id": "761f0f39-06a4-44c9-85ff-65b40d62ad20",
+      "name": "Merge Country",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        544,
+        208
+      ],
+      "mode": "combine",
+      "combinationMode": "mergeByPosition"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Access data from upstream nodes cleanly\nconst engagement = $('Process Engagement').first().json.engagement;\nconst search = $('Process Search').first().json.search;\nconst country = $('Process Country').first().json.country;\n\n// --- Helper Functions ---\nfunction generateTable(headers, rows, color) {\n    if(!rows || rows.length === 0) return '';\n    let table = `<table border=\"1\" style=\"border-collapse:collapse; width:100%; border:1px solid ${color}; font-family: Arial, sans-serif;\">`;\n    // Header\n    table += `<thead style=\"background-color:${color}; color:white;\"><tr>`;\n    headers.forEach(h => table += `<th style=\"padding:8px; text-align:left;\">${h}</th>`);\n    table += '</tr></thead><tbody>';\n    // Rows\n    rows.forEach(row => {\n        table += '<tr>';\n        row.forEach(cell => table += `<td style=\"padding:8px; border:1px solid #ddd;\">${cell}</td>`);\n        table += '</tr>';\n    });\n    table += '</tbody></table><br/>';\n    return table;\n}\n\nfunction sectionHeader(title, color) {\n    return `<h2 style=\"color:${color}; border-bottom: 2px solid ${color}; padding-bottom: 5px;\">${title}</h2>`;\n}\n\nfunction subHeader(title) {\n    return `<h3 style=\"color:#444;\">${title}</h3>`;\n}\n\nconst colors = {\n    engagement: '#4CAF50',\n    search: '#2196F3',\n    country: '#FF9800'\n};\n\nconst dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });\nlet html = `<h1 style=\"text-align:center; color:#333;\">Analytics Report: ${dateStr}</h1>`;\n\n// --- Engagement Section ---\nhtml += sectionHeader('Page Engagement', colors.engagement);\nhtml += subHeader('This Week');\nhtml += generateTable(['Page', 'Views', 'Users', 'Views/User', 'Events'], \n    engagement.thisWeek.map(i => [i.page, i.pageViews, i.activeUsers, i.viewsPerUser.toFixed(2), i.eventCount]), colors.engagement);\n\nhtml += subHeader('Prior Week');\nhtml += generateTable(['Page', 'Views', 'Users', 'Views/User', 'Events'], \n    engagement.priorWeek.map(i => [i.page, i.pageViews, i.activeUsers, i.viewsPerUser.toFixed(2), i.eventCount]), colors.engagement);\n\n// --- Search Section ---\nhtml += sectionHeader('Google Search Performance', colors.search);\nhtml += subHeader('This Week');\nhtml += generateTable(['Page', 'Users', 'Engaged', 'Eng. Rate', 'Pos', 'CTR', 'Clicks', 'Impr.'], \n    search.thisWeek.map(i => [i.page, i.activeUsers, i.engagedSessions, i.engagementRate.toFixed(2), i.avgPosition.toFixed(1), i.ctr.toFixed(2) + '%', i.clicks, i.impressions]), colors.search);\n\n// --- Country Section ---\nhtml += sectionHeader('Geographic Distribution', colors.country);\nhtml += subHeader('This Week');\nhtml += generateTable(['Country', 'Active Users', 'New Users', 'Eng. Rate', 'Total Users'], \n    country.thisWeek.map(i => [i.country, i.activeUsers, i.newUsers, i.engagementRate.toFixed(2), i.totalUsers]), colors.country);\n\nreturn {\n    json: {\n        title: `Analytics Report - ${dateStr}`,\n        html: html\n    }\n};"
+      },
+      "id": "e171b527-ec47-4e03-bf78-5f93390eae9d",
+      "name": "Generate HTML Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').first().json.email_to }}",
+        "subject": "={{ $json.title }}",
+        "message": "={{ $json.html }}",
+        "options": {
+          "senderName": "Automated Analytics Bot"
+        }
+      },
+      "id": "678e7fdc-7051-4b5f-806c-6a239d73920b",
+      "name": "Send Report Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        992,
+        208
+      ],
+      "webhookId": "0986b6af-ae10-457c-ac28-24d826fc9de5"
+    },
+    {
+      "parameters": {
+        "content": "# Optimized Analytics Workflow\n\n**Key Improvements:**\n1. **Parallel Execution**: Data streams (Engagement, Search, Country) run in parallel branches rather than a linear chain.\n2. **Clean JSON**: Removed the `encodeURIComponent` anti-pattern. Data is passed as native JSON objects.\n3. **Central Config**: Edit the 'Config' node to set Property ID and Email once.\n4. **Error Handling**: An Error Trigger sends an email if the workflow crashes.",
+        "height": 400,
+        "width": 360
+      },
+      "id": "62d218de-8baf-4461-b396-846b4ed4c9bc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1328,
+        32
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "On Schedule": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GA - Engagement (This Week)": {
+      "main": [
+        [
+          {
+            "node": "GA - Engagement (Prior Week)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GA - Engagement (Prior Week)": {
+      "main": [
+        [
+          {
+            "node": "Process Engagement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Engagement": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GA - Search (This Week)": {
+      "main": [
+        [
+          {
+            "node": "GA - Search (Prior Week)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GA - Search (Prior Week)": {
+      "main": [
+        [
+          {
+            "node": "Process Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Search": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "GA - Country (This Week)": {
+      "main": [
+        [
+          {
+            "node": "GA - Country (Prior Week)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GA - Country (Prior Week)": {
+      "main": [
+        [
+          {
+            "node": "Process Country",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Country": {
+      "main": [
+        [
+          {
+            "node": "Merge Country",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge All Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Country",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Country": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate HTML Report": {
+      "main": [
+        [
+          {
+            "node": "Send Report Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "19989f9f-36fb-4997-aa5a-9cef58fe82a6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7c9587012d63e2d42653a46bd0fbfc2b6788b0b347581abbd8fc55d8bc1fae57"
+  },
+  "id": "k6cSU6seSZRa8AF3",
+  "tags": []
+}

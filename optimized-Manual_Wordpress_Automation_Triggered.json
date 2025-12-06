@@ -1,0 +1,277 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "2017403c-7496-48f8-a487-8a017c7adfe3",
+      "name": "When clicking ‘Test workflow’",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        140,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "postId": "={{ $json.id }}",
+        "operation": "update",
+        "updateFields": {
+          "categories": "={{ $json.cleanCategoryId }}"
+        },
+        "options": {}
+      },
+      "id": "82ff288f-4234-4192-9046-33e5ffee5264",
+      "name": "Update Wordpress Post",
+      "type": "n8n-nodes-base.wordpress",
+      "typeVersion": 1,
+      "position": [
+        2060,
+        180
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {
+          "fields": [
+            "id",
+            "title",
+            "categories"
+          ]
+        }
+      },
+      "id": "d9fe6289-6b97-4830-80aa-754ac4d4b3e0",
+      "name": "Get All Wordpress Posts",
+      "type": "n8n-nodes-base.wordpress",
+      "typeVersion": 1,
+      "position": [
+        360,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "ed40bf13-8294-4b4e-a8b6-5749989d3420",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        1260,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "text": "=You are an expert content strategist. \n\nTask: Analyze the blog post title and assign the single most relevant Category ID from this list:\n\n13 = Content Creation\n14 = Digital Marketing\n15 = AI Tools\n17 = Automation & Integration\n18 = Productivity Tools\n19 = Analytics & Strategy\n\nTitle: \"{{ $json.title.rendered }}\"\n\nConstraint: Return ONLY the integer number of the category ID. Do not return any other text.",
+        "options": {
+          "systemMessage": "You are a classification machine. Output only numbers."
+        },
+        "promptType": "define"
+      },
+      "id": "dafeb935-532e-4067-9dfb-7e9a6bbc4e5a",
+      "name": "AI Categorizer Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1240,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 10,
+        "options": {}
+      },
+      "id": "a1b2c3d4-e5f6-4789-9012-345678901234",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        600,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.categories.some(cat => [13, 14, 15, 17, 18, 19].includes(typeof cat === 'object' ? cat.id : cat)) }}",
+              "value2": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-f6a7-4890-1234-567890123456",
+      "name": "Already Categorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        900,
+        240
+      ],
+      "notes": "Skips posts that already have one of the target IDs to save AI tokens."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Robust Cleaning of AI Output\nconst aiOutput = $json.output || $json.text || '';\n// Regex to find the first sequence of digits\nconst match = aiOutput.toString().match(/(\\d+)/);\n\nif (match) {\n  return {\n    json: {\n      ...$json,\n      cleanCategoryId: parseInt(match[0], 10)\n    }\n  };\n} else {\n  // Pass metadata to error handler logic if needed, or throw\n  throw new Error(`AI did not return a valid number. Output was: ${aiOutput}`);\n}"
+      },
+      "id": "c3d4e5f6-a7b8-4901-2345-678901234567",
+      "name": "Validate & Parse ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        180
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "d4e5f6a7-b8c9-4012-3456-789012345678",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        600,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Optimized Architecture\n1. **Batching**: Processes 10 posts at a time to prevent API timeouts.\n2. **Logic Check**: Skips posts that are already categorized to save cost.\n3. **Validation**: Code node ensures AI output is a strict Integer before hitting DB.\n4. **Error Handling**: \"Continue on Fail\" enabled on WP update; Global Error Trigger added.",
+        "height": 320,
+        "width": 460
+      },
+      "id": "e5f6a7b8-c9d0-4123-4567-890123456789",
+      "name": "Optimization Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        140,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log error to console (or connect to Slack/Email)\nconsole.error('Workflow Error:', $json);\nreturn $input.all();"
+      },
+      "id": "f6a7b8c9-d0e1-4234-5678-901234567890",
+      "name": "Log Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        600
+      ]
+    }
+  ],
+  "connections": {
+    "When clicking ‘Test workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get All Wordpress Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Wordpress Posts": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "Already Categorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Categorized?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "AI Categorizer Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Categorizer Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Categorizer Agent": {
+      "main": [
+        [
+          {
+            "node": "Validate & Parse ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Parse ID": {
+      "main": [
+        [
+          {
+            "node": "Update Wordpress Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Wordpress Post": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

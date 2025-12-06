@@ -1,0 +1,443 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9569b9f7-7243-41ee-8651-7f98e7232231",
+      "name": "When clicking ‘Test workflow’",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4e174415-4676-4d05-950c-35789045b410",
+              "name": "postId",
+              "value": "1032",
+              "type": "number"
+            },
+            {
+              "id": "42907925-c619-450f-a2e4-e05461234567",
+              "name": "voiceId",
+              "value": "21m00Tcm4TlvDq8ikWAM",
+              "type": "string"
+            },
+            {
+              "id": "10c07d50-1310-4dd7-a143-b0c0e5cf1b70",
+              "name": "siteUrl",
+              "value": "https://mydomain.com",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "47821853-b8f5-45f3-8e37-66365ba62422",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "Global Variables defined here"
+    },
+    {
+      "parameters": {
+        "postId": "={{ $json.postId }}",
+        "options": {},
+        "operation": "get"
+      },
+      "id": "fbde6cfe-9fac-46d2-958a-f42c9ef383a3",
+      "name": "Retrieve WordPress Article",
+      "type": "n8n-nodes-base.wordpress",
+      "typeVersion": 1,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.content.rendered }}",
+              "operation": "contains",
+              "value2": "wp-block-audio"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-e5f6-4789-9012-34567890abcdef",
+      "name": "Check if Audio Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        880,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "Safety: Prevent Overwrite"
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.content.rendered }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Summarize this article for a podcast intro."
+            }
+          ]
+        },
+        "promptType": "define",
+        "hasOutputParser": true
+      },
+      "id": "54241e39-7a5f-45f4-9dab-72b5424f4061",
+      "name": "Generate Summary",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        1100,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.elevenlabs.io/v1/text-to-speech/{{ $('Workflow Configuration').item.json.voiceId }}",
+        "method": "POST",
+        "sendBody": true,
+        "authentication": "genericCredentialType",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "name": "model_id",
+              "value": "eleven_multilingual_v2"
+            },
+            {
+              "name": "output_format",
+              "value": "mp3_44100_128"
+            }
+          ]
+        },
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "49cfaab6-a0c1-4319-904d-c1e0a2c6aa91",
+      "name": "ElevenLabs Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1460,
+        280
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "notEqual",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "12345678-1234-1234-1234-1234567890ab",
+      "name": "Gen Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Workflow Configuration').item.json.siteUrl }}/wp-json/wp/v2/media",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "sendHeaders": true,
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wordpressApi",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Disposition",
+              "value": "=attachment; filename=\"{{ $('Retrieve WordPress Article').item.json.slug }}.mp3\""
+            }
+          ]
+        },
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "899abf3f-4ab6-48bd-90ba-0502cb23348e",
+      "name": "Upload MP3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        260
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "notEqual",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "87654321-4321-4321-4321-ba0987654321",
+      "name": "Upload Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2120,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "postId": "={{ $('Workflow Configuration').item.json.postId }}",
+        "options": {},
+        "operation": "get"
+      },
+      "id": "11112222-3333-4444-5555-666677778888",
+      "name": "Refresh Article State",
+      "type": "n8n-nodes-base.wordpress",
+      "typeVersion": 1,
+      "position": [
+        2340,
+        240
+      ],
+      "notesInFlow": true,
+      "notes": "Safety: Get latest content before append"
+    },
+    {
+      "parameters": {
+        "postId": "={{ $('Workflow Configuration').item.json.postId }}",
+        "operation": "update",
+        "updateFields": {
+          "content": "=<!-- wp:audio {\"id\":{{ $('Upload MP3').item.json.id }}} -->\n<figure class=\"wp-block-audio\"><audio controls src=\"{{ $('Upload MP3').item.json.guid.rendered }}\"></audio><figcaption class=\"wp-element-caption\">🗣️ Listen to the summary. 👆</figcaption></figure>\n<!-- /wp:audio --><br>{{ $json.content.rendered }}"
+        }
+      },
+      "id": "590297c9-1f66-4071-8b47-230b08c379d4",
+      "name": "Update WordPress Post",
+      "type": "n8n-nodes-base.wordpress",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "id": "06e66119-2b95-416b-8167-41dccbbd8612",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1100,
+        500
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "99999999-9999-9999-9999-999999999999",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "Workflow failed during execution. Check execution logs."
+      },
+      "id": "88888888-8888-8888-8888-888888888888",
+      "name": "Log Error",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        700
+      ]
+    }
+  ],
+  "connections": {
+    "When clicking ‘Test workflow’": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "Retrieve WordPress Article",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve WordPress Article": {
+      "main": [
+        [
+          {
+            "node": "Check if Audio Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Audio Exists": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "ElevenLabs Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ElevenLabs Request": {
+      "main": [
+        [
+          {
+            "node": "Gen Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gen Success?": {
+      "main": [
+        [
+          {
+            "node": "Upload MP3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload MP3": {
+      "main": [
+        [
+          {
+            "node": "Upload Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Success?": {
+      "main": [
+        [
+          {
+            "node": "Refresh Article State",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh Article State": {
+      "main": [
+        [
+          {
+            "node": "Update WordPress Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
