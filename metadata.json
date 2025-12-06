@@ -1,0 +1,5 @@
+{
+  "name": "SonsMonitor Dashboard",
+  "description": "A comprehensive React dashboard for the SonsMonitor Reddit social listening tool, featuring real-time feed simulation, analytics, and AI-powered sentiment analysis.",
+  "requestFramePermissions": []
+}
