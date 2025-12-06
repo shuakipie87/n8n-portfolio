@@ -1,0 +1,572 @@
+{
+  "name": "Calendy-booking+instantly_events",
+  "nodes": [
+    {
+      "parameters": {
+        "resume": "specificTime",
+        "dateTime": "2025-12-04T23:47:29"
+      },
+      "id": "b4b12469-8d5d-4e06-849f-0c77201c0c04",
+      "name": "Wait for Meeting End",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        896,
+        128
+      ],
+      "webhookId": "44321234-uuid-placeholder"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Robust Date Calculation\nconst event = $('Trigger: Booking Created').item.json.payload.scheduled_event;\nconst endTimeStr = event.end_time;\n\nif (!endTimeStr) {\n  throw new Error(\"Event End Time missing from Calendly Payload\");\n}\n\nconst endDate = new Date(endTimeStr);\n// Add 15 minutes buffer to ensure meeting is definitely over\nendDate.setMinutes(endDate.getMinutes() + 15);\n\nreturn {\n  json: {\n    waitUntil: endDate.toISOString(),\n    inviteeUri: $('Trigger: Booking Created').item.json.payload.uri\n  }\n};"
+      },
+      "id": "8ac51cb2-b45a-40e6-92ab-81365a320f06",
+      "name": "Calc: End Time + Buffer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "lead",
+        "operation": "update",
+        "leadId": {
+          "__rl": true,
+          "value": "={{ $json.items[0].id }}",
+          "mode": "id"
+        },
+        "updateFields": {
+          "lt_interest_status": 2
+        }
+      },
+      "id": "f506481b-3974-4bc9-b1d8-a3539bb9ba13",
+      "name": "Instantly: Set Status Booked",
+      "type": "n8n-nodes-instantly.instantly",
+      "typeVersion": 1,
+      "position": [
+        448,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "lead",
+        "operation": "getMany",
+        "filters": {}
+      },
+      "id": "f7357d5a-ade8-47e7-9e08-8b0031beca73",
+      "name": "Instantly: Find Lead",
+      "type": "n8n-nodes-instantly.instantly",
+      "typeVersion": 1,
+      "position": [
+        240,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "events": [
+          "invitee.created"
+        ]
+      },
+      "id": "a83ee6b6-1fdc-4ab3-8b54-34dfbb351e2c",
+      "name": "Trigger: Booking Created",
+      "type": "n8n-nodes-base.calendlyTrigger",
+      "typeVersion": 1,
+      "position": [
+        16,
+        128
+      ],
+      "webhookId": "e4658fcc-6819-4d23-8c61-11423d70eadd",
+      "credentials": {
+        "calendlyOAuth2Api": {
+          "id": "5hYd9rlqw6PKpAnZ",
+          "name": "Calendly account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get meeting details from Calendly webhook\nconst meeting = $json;\n\n// Parse the meeting end time\nconst endTime = new Date(meeting.endTime);\n\n// Current time\nconst now = new Date();\n\n// Determine if meeting is completed\nconst completed = !meeting.canceled && !meeting.rescheduled && now > endTime;\n\n// --- Extract Google Event ID if available ---\n// Use the join_url from scheduled_event.location\nlet googleEventId = null;\nconst joinUrl = meeting.scheduled_event?.location?.join_url || null;\n\nif (joinUrl) {\n    try {\n        const urlParams = new URLSearchParams(joinUrl.split('?')[1]);\n        googleEventId = urlParams.get('event'); // extract 'event' query param\n    } catch (err) {\n        googleEventId = null;\n    }\n}\n\n// Return original meeting data + 'completed' field + Google Event ID\nreturn {\n    json: {\n        ...meeting,\n        completed,\n        googleEventId,\n        joinUrl // optional: include the full Google Meet URL for reference\n    }\n};\n"
+      },
+      "id": "718f2a77-2463-4997-adcb-7ea69964d0a1",
+      "name": "Attendance Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "lead",
+        "operation": "update",
+        "leadId": {
+          "__rl": true,
+          "value": "={{ $('Instantly: Find Lead').item.json.items[0].id }}",
+          "mode": "id"
+        },
+        "updateFields": {
+          "lt_interest_status": -3
+        }
+      },
+      "id": "bee0a25e-0e18-4930-a079-7e4ce3c313a9",
+      "name": "Instantly: Set Status Canceled",
+      "type": "n8n-nodes-instantly.instantly",
+      "typeVersion": 1,
+      "position": [
+        2016,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "lead",
+        "operation": "update",
+        "leadId": {
+          "__rl": true,
+          "value": "={{ $('Instantly: Find Lead').item.json.items[0].id }}",
+          "mode": "id"
+        },
+        "updateFields": {
+          "lt_interest_status": 3
+        }
+      },
+      "id": "cdb4e147-fb7e-4b33-9cab-efffcafc3392",
+      "name": "Instantly: Set Status Completed",
+      "type": "n8n-nodes-instantly.instantly",
+      "typeVersion": 1,
+      "position": [
+        2016,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$('Attendance Decision').item.json.completed}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "aec4946f-b311-474c-903e-56ef12940802",
+      "name": "If Attended",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1520,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "lead",
+        "operation": "update",
+        "leadId": {
+          "__rl": true,
+          "value": "={{ $json.items[0].id }}",
+          "mode": "id"
+        },
+        "updateFields": {
+          "lt_interest_status": -3
+        }
+      },
+      "type": "n8n-nodes-instantly.instantly",
+      "typeVersion": 1,
+      "position": [
+        1504,
+        448
+      ],
+      "id": "7cd3a15e-8c66-4a19-85a7-1bc8cf321617",
+      "name": "Meeting Canceled1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Detect whether Calendly sent the normal wrapper (\"payload\") \n// or if n8n already parsed the inner object.\nconst payload = $json.payload || $json;\n\n// --- Tracking Information ---\nconst tracking = payload.tracking || {};\n\n\n// --- Core Invitee Information ---\nconst email = payload.email || null;\nconst Name = payload.name|| null;\n\n\n// --- Event Timing ---\nconst startTime = payload.scheduled_event?.start_time || null;\nconst endTime = payload.scheduled_event?.end_time || null;\n\n// --- Cancellations, Reschedules, No-show ---\nconst canceled = payload.status || false;\nconst rescheduled = payload.rescheduled || false;\nconst noShow = payload.no_show ? true : false;\n\n// --- Event Name, Type, etc. ---\nconst eventName = payload.scheduled_event?.name || null;\nconst eventUri = payload.scheduled_event?.uri || null;\nconst eventType = payload.scheduled_event?.event_type || null;\n\n// --- Payment data (if any) ---\nconst payment = payload.payment || null;\n\n// --- The final object returned to the next n8n node ---\nreturn {\n\tjson: {\n\t\n\t\temail,\n\t\tName,\t\t\n\t\tstartTime,\n\t\tendTime,\n\t\teventName,\n\t\teventUri,\n\t\teventType,\n\t\tcanceled,\n\t\trescheduled,\n\t\tnoShow,\n\t\tpayment\n\t}\n};\n"
+      },
+      "id": "c56902b1-680b-4baa-86ad-678ee5a965b0",
+      "name": "Check if Cancel Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Trigger if Cancel\n",
+        "height": 80,
+        "width": 224
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        448,
+        464
+      ],
+      "id": "9c690bdb-0700-42b4-a019-890cb2339676",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "events": [
+          "invitee.canceled"
+        ]
+      },
+      "type": "n8n-nodes-base.calendlyTrigger",
+      "typeVersion": 1,
+      "position": [
+        768,
+        448
+      ],
+      "id": "50d18533-312c-4f0c-a53a-afa0fae372f2",
+      "name": "Calendly Cancel Event",
+      "webhookId": "55888972-5784-4ea5-8a67-ddbf58b2e52f",
+      "credentials": {
+        "calendlyOAuth2Api": {
+          "id": "5hYd9rlqw6PKpAnZ",
+          "name": "Calendly account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "lead",
+        "operation": "getMany",
+        "filters": {}
+      },
+      "id": "d20dec3d-63c5-4b92-a506-cdaafad4f0f8",
+      "name": "Instantly: Find Lead1",
+      "type": "n8n-nodes-instantly.instantly",
+      "typeVersion": 1,
+      "position": [
+        1264,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Trigger Calendy Booking\n",
+        "height": 80,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "45378565-4d14-4d9e-86e6-8c656ee9aa10",
+      "name": "Sticky Note1"
+    }
+  ],
+  "pinData": {
+    "Trigger: Booking Created": [
+      {
+        "json": {
+          "created_at": "2025-12-04T15:43:51.000000Z",
+          "created_by": "https://api.calendly.com/users/6de04eb9-574b-4e7e-9861-7ce692859cb7",
+          "event": "invitee.created",
+          "payload": {
+            "cancel_url": "https://calendly.com/cancellations/67cf3641-f6f0-44b2-b425-21528bed9678",
+            "created_at": "2025-12-04T15:43:50.924035Z",
+            "email": "medyoshuaki@gmail.com",
+            "event": "https://api.calendly.com/scheduled_events/5b70cbee-0295-4673-a6e3-02c1c5dd884d",
+            "first_name": null,
+            "invitee_scheduled_by": null,
+            "last_name": null,
+            "name": "Joshua",
+            "new_invitee": null,
+            "no_show": null,
+            "old_invitee": null,
+            "payment": null,
+            "questions_and_answers": [
+              {
+                "answer": "Test",
+                "position": 0,
+                "question": "Please share anything that will help prepare for our meeting."
+              }
+            ],
+            "reconfirmation": null,
+            "reschedule_url": "https://calendly.com/reschedulings/67cf3641-f6f0-44b2-b425-21528bed9678",
+            "rescheduled": false,
+            "routing_form_submission": null,
+            "scheduled_event": {
+              "created_at": "2025-12-04T15:43:50.907467Z",
+              "end_time": "2025-12-04T23:15:00.000000Z",
+              "event_guests": [],
+              "event_memberships": [
+                {
+                  "user": "https://api.calendly.com/users/6de04eb9-574b-4e7e-9861-7ce692859cb7",
+                  "user_email": "joshuadingcong00@gmail.com",
+                  "user_name": "Joem Yams"
+                }
+              ],
+              "event_type": "https://api.calendly.com/event_types/13af9640-801f-423f-bf6c-8a9e91fd5fbe",
+              "invitees_counter": {
+                "total": 1,
+                "active": 1,
+                "limit": 1
+              },
+              "location": {
+                "join_url": "https://calendly.com/events/5b70cbee-0295-4673-a6e3-02c1c5dd884d/google_meet",
+                "status": "processing",
+                "type": "google_conference"
+              },
+              "meeting_notes_html": null,
+              "meeting_notes_plain": null,
+              "name": "30 Minute Meeting",
+              "start_time": "2025-12-04T23:00:00.000000Z",
+              "status": "active",
+              "updated_at": "2025-12-04T15:43:50.907467Z",
+              "uri": "https://api.calendly.com/scheduled_events/5b70cbee-0295-4673-a6e3-02c1c5dd884d"
+            },
+            "scheduling_method": null,
+            "status": "active",
+            "text_reminder_number": null,
+            "timezone": "Asia/Manila",
+            "tracking": {
+              "utm_campaign": null,
+              "utm_source": null,
+              "utm_medium": null,
+              "utm_content": null,
+              "utm_term": null,
+              "salesforce_uuid": null
+            },
+            "updated_at": "2025-12-04T15:43:50.924035Z",
+            "uri": "https://api.calendly.com/scheduled_events/5b70cbee-0295-4673-a6e3-02c1c5dd884d/invitees/67cf3641-f6f0-44b2-b425-21528bed9678"
+          }
+        }
+      }
+    ],
+    "Calendly Cancel Event": [
+      {
+        "json": {
+          "created_at": "2025-12-04T14:20:42.000000Z",
+          "created_by": "https://api.calendly.com/users/6de04eb9-574b-4e7e-9861-7ce692859cb7",
+          "event": "invitee.canceled",
+          "payload": {
+            "cancel_url": "https://calendly.com/cancellations/4df14c70-c263-46b3-a71c-13cc24b8dbc1",
+            "cancellation": {
+              "canceled_by": "yam",
+              "canceler_type": "invitee",
+              "created_at": "2025-12-04T14:20:39.271767Z",
+              "reason": "No opputunity"
+            },
+            "created_at": "2025-12-04T14:17:40.764066Z",
+            "email": "medyodshuaki@gmail.com",
+            "event": "https://api.calendly.com/scheduled_events/6d60b4ce-927c-4700-a09b-007356654c0b",
+            "first_name": null,
+            "invitee_scheduled_by": null,
+            "last_name": null,
+            "name": "yam",
+            "new_invitee": null,
+            "no_show": null,
+            "old_invitee": null,
+            "payment": null,
+            "questions_and_answers": [
+              {
+                "answer": "test",
+                "position": 0,
+                "question": "Please share anything that will help prepare for our meeting."
+              }
+            ],
+            "reconfirmation": null,
+            "reschedule_url": "https://calendly.com/reschedulings/4df14c70-c263-46b3-a71c-13cc24b8dbc1",
+            "rescheduled": false,
+            "routing_form_submission": null,
+            "scheduled_event": {
+              "cancellation": {
+                "canceled_by": "yam",
+                "canceler_type": "invitee",
+                "created_at": "2025-12-04T14:20:39.271767Z",
+                "reason": "No opputunity"
+              },
+              "created_at": "2025-12-04T14:17:40.747211Z",
+              "end_time": "2025-12-11T16:15:00.000000Z",
+              "event_guests": [],
+              "event_memberships": [
+                {
+                  "user": "https://api.calendly.com/users/6de04eb9-574b-4e7e-9861-7ce692859cb7",
+                  "user_email": "joshuadingcong00@gmail.com",
+                  "user_name": "Joem Yams"
+                }
+              ],
+              "event_type": "https://api.calendly.com/event_types/13af9640-801f-423f-bf6c-8a9e91fd5fbe",
+              "invitees_counter": {
+                "total": 1,
+                "active": 0,
+                "limit": 1
+              },
+              "location": {
+                "join_url": "https://calendly.com/events/6d60b4ce-927c-4700-a09b-007356654c0b/google_meet",
+                "status": "pushed",
+                "type": "google_conference"
+              },
+              "meeting_notes_html": null,
+              "meeting_notes_plain": null,
+              "name": "30 Minute Meeting",
+              "start_time": "2025-12-11T16:00:00.000000Z",
+              "status": "canceled",
+              "updated_at": "2025-12-04T14:20:39.337983Z",
+              "uri": "https://api.calendly.com/scheduled_events/6d60b4ce-927c-4700-a09b-007356654c0b"
+            },
+            "scheduling_method": null,
+            "status": "canceled",
+            "text_reminder_number": null,
+            "timezone": "Asia/Manila",
+            "tracking": {
+              "utm_campaign": null,
+              "utm_source": null,
+              "utm_medium": null,
+              "utm_content": null,
+              "utm_term": null,
+              "salesforce_uuid": null
+            },
+            "updated_at": "2025-12-04T14:20:39.274187Z",
+            "uri": "https://api.calendly.com/scheduled_events/6d60b4ce-927c-4700-a09b-007356654c0b/invitees/4df14c70-c263-46b3-a71c-13cc24b8dbc1"
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Wait for Meeting End": {
+      "main": [
+        [
+          {
+            "node": "Attendance Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calc: End Time + Buffer": {
+      "main": [
+        [
+          {
+            "node": "Wait for Meeting End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instantly: Set Status Booked": {
+      "main": [
+        [
+          {
+            "node": "Calc: End Time + Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instantly: Find Lead": {
+      "main": [
+        [
+          {
+            "node": "Instantly: Set Status Booked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger: Booking Created": {
+      "main": [
+        [
+          {
+            "node": "Instantly: Find Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attendance Decision": {
+      "main": [
+        [
+          {
+            "node": "If Attended",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Attended": {
+      "main": [
+        [
+          {
+            "node": "Instantly: Set Status Completed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Instantly: Set Status Canceled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Cancel Status": {
+      "main": [
+        [
+          {
+            "node": "Instantly: Find Lead1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calendly Cancel Event": {
+      "main": [
+        [
+          {
+            "node": "Check if Cancel Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instantly: Find Lead1": {
+      "main": [
+        [
+          {
+            "node": "Meeting Canceled1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "fa1cdb21-57dc-4d7f-848a-3b48acf67ee2",
+  "meta": {
+    "instanceId": "80f38643b0cd13c879d99e1ea0c413edd05b78d0bf8ca5aff53ef5e2ea615da9"
+  },
+  "id": "JbJ5SkF56zHg2KbW",
+  "tags": []
+}

@@ -1,0 +1,123 @@
+{
+  "name": "New Lead Email Sender",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "2b7eb779-dca6-4200-8228-c724ca02a831",
+      "name": "Webhook",
+      "webhookId": "e441b355-7bed-4ce1-91e4-78a50d2b1f43"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3b565d24-283f-4582-ba02-815ef1d2449c",
+              "name": "=name",
+              "value": "={{ $json[\"body\"][\"name\"] || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "a682066f-50b1-4037-a5ed-c759db89b3c0",
+              "name": "=email",
+              "value": "={{ $json[\"body\"][\"email\"] || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "407feb7f-c637-437e-9b5f-2ed866c4272c",
+              "name": "company",
+              "value": "={{ $json[\"body\"][\"company\"] || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "a55c0829-dab6-4de6-9ef2-ae46f09d8f78",
+              "name": "message",
+              "value": "={{ $json[\"body\"][\"message\"] || \"\" }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "id": "b2dc0567-bf67-41d1-970c-c96b6ed6bea3",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "fromEmail": "puneetharajkr123@gmail.com",
+        "toEmail": "puneetharajkr2001@gmail.com,puneetharajkr21@gmail.com",
+        "subject": "New Lead from Website",
+        "emailFormat": "text",
+        "text": "=Name: {{ $json[\"name\"] }}\nEmail: {{ $json[\"email\"] }}\nCompany: {{ $json[\"company\"] }}\nMessage: {{ $json[\"message\"] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        440,
+        0
+      ],
+      "id": "11d2b941-562c-45cc-a27f-5d1fdfd1589b",
+      "name": "Send Email",
+      "webhookId": "c442c35c-655e-4ba0-b380-6e3de2ba882c",
+      "credentials": {
+        "smtp": {
+          "id": "ZTph1bjS5FNZKkIZ",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "589791f1-7034-4634-99ee-3b917df2caff",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "72c262168750718bcce96a4e5c23a9224069a69b9a125b8923c3bd4eab18796d"
+  },
+  "id": "Gf7G9xvXYLQbWiRG",
+  "tags": []
+}

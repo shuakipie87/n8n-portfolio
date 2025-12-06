@@ -1,0 +1,419 @@
+{
+  "name": "Influencer Marketing w/ Mobile Number +instantlyai",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "instantly-lead-events",
+        "options": {}
+      },
+      "name": "Insty Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1072,
+        80
+      ],
+      "id": "44c9be2b-f807-4219-8af1-2d65a27308a9",
+      "webhookId": "0855e4ff-e74c-4baa-9ebe-cf81460c98fe"
+    },
+    {
+      "parameters": {
+        "jsCode": "const statusMap = {\n  lead_interested: \"Interested\",\n  lead_meeting_booked: \"Meeting Booked\",\n  reply_received: \"Replied\",\n  auto_reply_received: \"Auto Reply\",\n  negative_reply: \"Not Interested\",\n  lead_meeting_completed: \"Meeting Completed\",\n  campaign_completed_for_lead_without_reply: \"No Reply\",\n  campaign_started: \"Campaign Started\",\n  campaign_paused: \"Campaign Paused\",\n  campaign_completed: \"Campaign Completed\",\n  email_bounced: \"Bounced\",\n  email_open: \"Opened\",\n  email_reply: \"Replied\",\n};\n\nreturn $input.all().map(item => {\n  const body = item.json;\n\n  // Normalize email\n  const leadEmail = $input.first().json.body.lead_email || null;\n\n  // Normalize event type\n  const eventType = $input.first().json.body.event_type || null;\n\n  // Map status safely in plain JS\n  let mappedStatus = \"Unknown\";\n  if (eventType && statusMap.hasOwnProperty(eventType)) {\n    mappedStatus = statusMap[eventType];\n  } else if (eventType) {\n    mappedStatus = eventType;\n  }\n\n  const timestamp = body.timestamp_created || body.timestamp || new Date().toISOString();\n\n  return {\n    json: {\n      leadEmail,\n      eventType,\n      mappedStatus,\n      timestamp,\n      raw: body\n    }\n  };\n});\n"
+      },
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        16
+      ],
+      "id": "a3d25daa-f825-404e-8f0d-ffb175c959de"
+    },
+    {
+      "parameters": {
+        "authentication": "airtableOAuth2Api",
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "app70R7Owu276dxbk",
+          "mode": "list",
+          "cachedResultName": "Influencer Marketing w/ Mobile Number",
+          "cachedResultUrl": "https://airtable.com/app70R7Owu276dxbk"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tbllnRmBVx1VuzQIa",
+          "mode": "list",
+          "cachedResultName": "Imported table",
+          "cachedResultUrl": "https://airtable.com/app70R7Owu276dxbk/tbllnRmBVx1VuzQIa"
+        },
+        "filterByFormula": "={Email} = \"{{ $json.leadEmail }}\"",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -512,
+        16
+      ],
+      "id": "80b89853-ce84-44ad-98a5-659875abacde",
+      "name": "Search records",
+      "credentials": {
+        "airtableOAuth2Api": {
+          "id": "zqYa2sljF56cLq7T",
+          "name": "Airtable Personal Access Token account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": true,
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Record Found?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -288,
+        16
+      ],
+      "id": "32c003da-fe37-44eb-b561-827a53fce543"
+    },
+    {
+      "parameters": {
+        "authentication": "airtableOAuth2Api",
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "app70R7Owu276dxbk",
+          "mode": "list",
+          "cachedResultName": "Influencer Marketing w/ Mobile Number",
+          "cachedResultUrl": "https://airtable.com/app70R7Owu276dxbk"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tbllnRmBVx1VuzQIa",
+          "mode": "list",
+          "cachedResultName": "Imported table",
+          "cachedResultUrl": "https://airtable.com/app70R7Owu276dxbk/tbllnRmBVx1VuzQIa"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Event Type": "={{ $('Normalize Payload').item.json.eventType || \"\" }}",
+            "id": "={{ $('Record Found?1').item.json.id }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Full Name",
+              "displayName": "Full Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Event Type",
+              "displayName": "Event Type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Tags",
+              "displayName": "Tags",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Bounced",
+              "displayName": "Bounced",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "4ec0dcc4-5b67-43ad-8e3f-70b42a091c5c",
+      "name": "Update record",
+      "credentials": {
+        "airtableOAuth2Api": {
+          "id": "zqYa2sljF56cLq7T",
+          "name": "Airtable Personal Access Token account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Check Events on Instantly and check the records on airtable and update the record base on the event type lead",
+        "height": 144,
+        "width": 848
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        -144
+      ],
+      "id": "ef72c905-f560-4ae7-a49f-27d9f47d9fdb",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {
+    "Insty Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "yamjoem.app.n8n.cloud",
+            "user-agent": "axios/0.21.4",
+            "content-length": "3187",
+            "accept": "application/json, text/plain, */*",
+            "accept-encoding": "gzip, br",
+            "cdn-loop": "cloudflare; loops=1; subreqs=1",
+            "cf-connecting-ip": "3.213.189.245",
+            "cf-ew-via": "15",
+            "cf-ipcountry": "US",
+            "cf-ray": "9a852a6bb6590846-IAD",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-worker": "n8n.cloud",
+            "content-type": "application/json",
+            "x-forwarded-for": "3.213.189.245, 172.70.38.26",
+            "x-forwarded-host": "yamjoem.app.n8n.cloud",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "traefik-prod-users-gwc-52-6c4f4684d5-swjxv",
+            "x-is-trusted": "yes",
+            "x-real-ip": "3.213.189.245"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "timestamp": "2025-12-03T18:35:45.760Z",
+            "event_type": "lead_not_interested",
+            "workspace": "f97e0d4e-8b1a-45fa-8e8a-e618f002c89a",
+            "campaign_id": "d143104a-b904-4ac3-9a7d-283fc863112d",
+            "unibox_url": null,
+            "campaign_name": "IM | AU/NZ/AS/ME/KSA Motion Picture & Film 11.21.2025",
+            "reply_text_snippet": "Hi Kendra,  Thanks for getting in touch.  I am afraid we don",
+            "lead_email": "shauna.moore@studiocanal.com.au",
+            "City": "Sydney",
+            "State": "New South Wales",
+            "email": "shauna.moore@studiocanal.com.au",
+            "phone": "",
+            "Country": "Australia",
+            "website": "https://studiocanal.com.au",
+            "Industry": "media production",
+            "jobTitle": "Senior Marketing Manager",
+            "lastName": "Moore",
+            "linkedIn": "http://www.linkedin.com/in/shauna-moore-675b6822",
+            "firstName": "Shauna",
+            "# Employees": "16.0",
+            "companyName": "STUDIOCANAL Australia & NZ",
+            "Company City": "Sydney",
+            "Company State": "New South Wales",
+            "Annual Revenue": "30000000.0",
+            "Company Country": "Australia",
+            "Mobile Phone 02": "",
+            "Target Industry": "Motion Pictures & Film",
+            "Company Linkedin Url": "http://www.linkedin.com/company/studiocanal-australia",
+            "Number of Retail Locations": "",
+            "step": 3,
+            "variant": 1,
+            "reply_subject": "RE: STUDIOCANAL Australia & NZ x YouTube",
+            "reply_text": "Hi Kendra,  Thanks for getting in touch.  I am afraid we don’t have a business need for your services at this time but appreciate you reaching out.  Kind regards, Shauna  From: Kendra Turner <kendra@terrieragencyhq.com> Sent: Monday, 1 December 2025 11:10 AM To: MOORE Shauna (Studiocanal) <shauna.moore@studiocanal.com.au> Subject: Re: STUDIOCANAL Australia & NZ x YouTube  Hey Shauna, not sure if I'm landing in your inbox.  Quick little idea. Would it be alright to meet you online today?  Kendra On Thu, November 27, 2025 12:05 AM, Kendra Turner <kendra@terrieragencyhq.com<mailto:kendra@terrieragencyhq.com>> wrote: Hey Shauna, So sorry, I must've been too vague last time, but this might help as you plan your upcoming content.  In a recent campaign for Official London Theatre, we activated 1,220 influencers and delivered 9M+ views, 111K+ total engagements, and reached 104M+ people across the UK.  We took care of everything, from research and creator outreach to campaign execution and reporting. We turned product and service gifting into premium content across Instagram, TikTok, and YouTube. All outreach was done using the brand’s own channels, so they kept the relationships, and we tracked every view, click, and comment to show clear performance.  Here’s a case study deck from brands we manage: https://pitch.com/v/event-experience---case-studies-u5qrbf<https://urldefense.com/v3/__https:/pitch.com/v/event-experience---case-studies-u5qrbf__;!!BbMIO5B-jb9uIA!EfQDq_UvSmBePvg95CYOFGRpEPsRxS7RoQQ6FtGvS4dK9JI0gY2hbgjjfIK1eDNH2-bNKgTL5PM-7gyhZ0ZPY4CZsGuZuA$>  Kendra  Sent from my iPhone On Tue, November 25, 2025 10:27 PM, Kendra Turner <kendra@terrieragencyhq.com<mailto:kendra@terrieragencyhq.com>> wrote: Hello Shauna, would it be alright to send you gifted influencer marketing ideas we produced for media production brands?  We’re looking for brands we can feature through socials like Instagram, TikTok, and YouTube, and STUDIOCANAL Australia & NZ stood out while I was looking "
+          },
+          "webhookUrl": "https://yamjoem.app.n8n.cloud/webhook/instantly-lead-events",
+          "executionMode": "production"
+        }
+      }
+    ],
+    "Normalize Payload": [
+      {
+        "json": {
+          "leadEmail": "shauna.moore@studiocanal.com.au",
+          "eventType": "lead_not_interested",
+          "mappedStatus": "lead_not_interested",
+          "timestamp": "2025-12-03T18:55:11.282Z",
+          "raw": {
+            "headers": {
+              "host": "yamjoem.app.n8n.cloud",
+              "user-agent": "axios/0.21.4",
+              "content-length": "3187",
+              "accept": "application/json, text/plain, */*",
+              "accept-encoding": "gzip, br",
+              "cdn-loop": "cloudflare; loops=1; subreqs=1",
+              "cf-connecting-ip": "3.213.189.245",
+              "cf-ew-via": "15",
+              "cf-ipcountry": "US",
+              "cf-ray": "9a852a6bb6590846-IAD",
+              "cf-visitor": "{\"scheme\":\"https\"}",
+              "cf-worker": "n8n.cloud",
+              "content-type": "application/json",
+              "x-forwarded-for": "3.213.189.245, 172.70.38.26",
+              "x-forwarded-host": "yamjoem.app.n8n.cloud",
+              "x-forwarded-port": "443",
+              "x-forwarded-proto": "https",
+              "x-forwarded-server": "traefik-prod-users-gwc-52-6c4f4684d5-swjxv",
+              "x-is-trusted": "yes",
+              "x-real-ip": "3.213.189.245"
+            },
+            "params": {},
+            "query": {},
+            "body": {
+              "timestamp": "2025-12-03T18:35:45.760Z",
+              "event_type": "lead_not_interested",
+              "workspace": "f97e0d4e-8b1a-45fa-8e8a-e618f002c89a",
+              "campaign_id": "d143104a-b904-4ac3-9a7d-283fc863112d",
+              "unibox_url": null,
+              "campaign_name": "IM | AU/NZ/AS/ME/KSA Motion Picture & Film 11.21.2025",
+              "reply_text_snippet": "Hi Kendra,  Thanks for getting in touch.  I am afraid we don",
+              "lead_email": "shauna.moore@studiocanal.com.au",
+              "City": "Sydney",
+              "State": "New South Wales",
+              "email": "shauna.moore@studiocanal.com.au",
+              "phone": "",
+              "Country": "Australia",
+              "website": "https://studiocanal.com.au",
+              "Industry": "media production",
+              "jobTitle": "Senior Marketing Manager",
+              "lastName": "Moore",
+              "linkedIn": "http://www.linkedin.com/in/shauna-moore-675b6822",
+              "firstName": "Shauna",
+              "# Employees": "16.0",
+              "companyName": "STUDIOCANAL Australia & NZ",
+              "Company City": "Sydney",
+              "Company State": "New South Wales",
+              "Annual Revenue": "30000000.0",
+              "Company Country": "Australia",
+              "Mobile Phone 02": "",
+              "Target Industry": "Motion Pictures & Film",
+              "Company Linkedin Url": "http://www.linkedin.com/company/studiocanal-australia",
+              "Number of Retail Locations": "",
+              "step": 3,
+              "variant": 1,
+              "reply_subject": "RE: STUDIOCANAL Australia & NZ x YouTube",
+              "reply_text": "Hi Kendra,  Thanks for getting in touch.  I am afraid we don’t have a business need for your services at this time but appreciate you reaching out.  Kind regards, Shauna  From: Kendra Turner <kendra@terrieragencyhq.com> Sent: Monday, 1 December 2025 11:10 AM To: MOORE Shauna (Studiocanal) <shauna.moore@studiocanal.com.au> Subject: Re: STUDIOCANAL Australia & NZ x YouTube  Hey Shauna, not sure if I'm landing in your inbox.  Quick little idea. Would it be alright to meet you online today?  Kendra On Thu, November 27, 2025 12:05 AM, Kendra Turner <kendra@terrieragencyhq.com<mailto:kendra@terrieragencyhq.com>> wrote: Hey Shauna, So sorry, I must've been too vague last time, but this might help as you plan your upcoming content.  In a recent campaign for Official London Theatre, we activated 1,220 influencers and delivered 9M+ views, 111K+ total engagements, and reached 104M+ people across the UK.  We took care of everything, from research and creator outreach to campaign execution and reporting. We turned product and service gifting into premium content across Instagram, TikTok, and YouTube. All outreach was done using the brand’s own channels, so they kept the relationships, and we tracked every view, click, and comment to show clear performance.  Here’s a case study deck from brands we manage: https://pitch.com/v/event-experience---case-studies-u5qrbf<https://urldefense.com/v3/__https:/pitch.com/v/event-experience---case-studies-u5qrbf__;!!BbMIO5B-jb9uIA!EfQDq_UvSmBePvg95CYOFGRpEPsRxS7RoQQ6FtGvS4dK9JI0gY2hbgjjfIK1eDNH2-bNKgTL5PM-7gyhZ0ZPY4CZsGuZuA$>  Kendra  Sent from my iPhone On Tue, November 25, 2025 10:27 PM, Kendra Turner <kendra@terrieragencyhq.com<mailto:kendra@terrieragencyhq.com>> wrote: Hello Shauna, would it be alright to send you gifted influencer marketing ideas we produced for media production brands?  We’re looking for brands we can feature through socials like Instagram, TikTok, and YouTube, and STUDIOCANAL Australia & NZ stood out while I was looking "
+            },
+            "webhookUrl": "https://yamjoem.app.n8n.cloud/webhook/instantly-lead-events",
+            "executionMode": "production"
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Insty Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Search records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search records": {
+      "main": [
+        [
+          {
+            "node": "Record Found?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Found?1": {
+      "main": [
+        [
+          {
+            "node": "Update record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "9ecd6546-f43a-4323-ac46-0b1c8a8e728a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "80f38643b0cd13c879d99e1ea0c413edd05b78d0bf8ca5aff53ef5e2ea615da9"
+  },
+  "id": "ph52iUYkfEnaFTYT",
+  "tags": []
+}

@@ -1,0 +1,781 @@
+{
+  "name": "Bark Social US +instantlyai",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "17277f1c-3be5-4c7f-a28f-6ea0fd28afaa",
+        "options": {}
+      },
+      "name": "Insty Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        512,
+        144
+      ],
+      "id": "17c18059-5118-4ac2-a3ad-0cc65031c83a",
+      "webhookId": "17277f1c-3be5-4c7f-a28f-6ea0fd28afaa"
+    },
+    {
+      "parameters": {
+        "jsCode": "const statusMap = {\n  lead_interested: \"Interested\",\n  lead_meeting_booked: \"Meeting Booked\",\n  reply_received: \"Replied\",\n  auto_reply_received: \"Auto Reply\",\n  negative_reply: \"Not Interested\",\n  lead_meeting_completed: \"Meeting Completed\",\n  campaign_completed_for_lead_without_reply: \"No Reply\",\n  campaign_started: \"Campaign Started\",\n  campaign_paused: \"Campaign Paused\",\n  campaign_completed: \"Campaign Completed\",\n  email_bounced: \"Bounced\",\n  email_open: \"Opened\",\n  email_reply: \"Replied\",\n};\n\nreturn $input.all().map(item => {\n  const body = item.json;\n\n  // Normalize email\n  const leadEmail = $input.first().json.body.lead_email || null;\n\n  // Normalize event type\n  const eventType = $input.first().json.body.event_type || null;\n\n  // Map status safely in plain JS\n  let mappedStatus = \"Unknown\";\n  if (eventType && statusMap.hasOwnProperty(eventType)) {\n    mappedStatus = statusMap[eventType];\n  } else if (eventType) {\n    mappedStatus = eventType;\n  }\n\n  const timestamp = body.timestamp_created || body.timestamp || new Date().toISOString();\n\n  return {\n    json: {\n      leadEmail,\n      eventType,\n      mappedStatus,\n      timestamp,\n      raw: body\n    }\n  };\n});\n"
+      },
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        80
+      ],
+      "id": "818e4bd1-4353-41cb-bf31-9350b322e17a"
+    },
+    {
+      "parameters": {
+        "authentication": "airtableOAuth2Api",
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appTt0Ni7nVSaZXL1",
+          "mode": "list",
+          "cachedResultName": "Bark Social US",
+          "cachedResultUrl": "https://airtable.com/appTt0Ni7nVSaZXL1"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tbl2LC7yAj671kyJg",
+          "mode": "list",
+          "cachedResultName": "Table 1",
+          "cachedResultUrl": "https://airtable.com/appTt0Ni7nVSaZXL1/tbl2LC7yAj671kyJg"
+        },
+        "filterByFormula": "={Email} = \"{{ $json.leadEmail }}\"",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1072,
+        80
+      ],
+      "id": "68aeaa36-f257-4f7d-921b-3702ccb9812a",
+      "name": "Search records",
+      "credentials": {
+        "airtableOAuth2Api": {
+          "id": "pMLXBkJNzgKkXvnr",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": true,
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Record Found?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1296,
+        80
+      ],
+      "id": "1d7cc08f-006e-45b5-9583-5f4df699c0ad"
+    },
+    {
+      "parameters": {
+        "authentication": "airtableOAuth2Api",
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appTt0Ni7nVSaZXL1",
+          "mode": "list",
+          "cachedResultName": "Bark Social US",
+          "cachedResultUrl": "https://airtable.com/appTt0Ni7nVSaZXL1"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tbl2LC7yAj671kyJg",
+          "mode": "list",
+          "cachedResultName": "Table 1",
+          "cachedResultUrl": "https://airtable.com/appTt0Ni7nVSaZXL1/tbl2LC7yAj671kyJg"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Record Found?1').item.json.id }}",
+            "status": "={{ $('Normalize Payload').item.json.eventType || \"\" }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "full name",
+              "displayName": "full name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "first name",
+              "displayName": "first name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last name",
+              "displayName": "last name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "result",
+              "displayName": "result",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "seniority",
+              "displayName": "seniority",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "departments",
+              "displayName": "departments",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "mobile phone 01",
+              "displayName": "mobile phone 01",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "mobile phone 02",
+              "displayName": "mobile phone 02",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "corporate phone",
+              "displayName": "corporate phone",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "headcount",
+              "displayName": "headcount",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "target industry",
+              "displayName": "target industry",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "sub industry",
+              "displayName": "sub industry",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "keywords",
+              "displayName": "keywords",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "person linkedin url",
+              "displayName": "person linkedin url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "company linkedin url",
+              "displayName": "company linkedin url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "facebook url",
+              "displayName": "facebook url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "twitter url",
+              "displayName": "twitter url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "city",
+              "displayName": "city",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "state",
+              "displayName": "state",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "lead country",
+              "displayName": "lead country",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "company address",
+              "displayName": "company address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "company city",
+              "displayName": "company city",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "company state",
+              "displayName": "company state",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "company country",
+              "displayName": "company country",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "company phone",
+              "displayName": "company phone",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "technologies",
+              "displayName": "technologies",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "annual revenue",
+              "displayName": "annual revenue",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "total funding",
+              "displayName": "total funding",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "latest funding",
+              "displayName": "latest funding",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "latest funding amount",
+              "displayName": "latest funding amount",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last raised at",
+              "displayName": "last raised at",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "subsidiary of",
+              "displayName": "subsidiary of",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "number of retail locations",
+              "displayName": "number of retail locations",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1584,
+        64
+      ],
+      "id": "ab7b3f95-734d-4cd8-8bfd-bf795ec63903",
+      "name": "Update record",
+      "credentials": {
+        "airtableOAuth2Api": {
+          "id": "pMLXBkJNzgKkXvnr",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Check Events on Instantly and check the records on airtable and update the record base on the event type lead",
+        "height": 144,
+        "width": 848
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        704,
+        -80
+      ],
+      "id": "40e4e3d3-8b42-4610-8838-f25d25567684",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {
+    "Insty Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "yamjoem.app.n8n.cloud",
+            "user-agent": "axios/0.21.4",
+            "content-length": "3187",
+            "accept": "application/json, text/plain, */*",
+            "accept-encoding": "gzip, br",
+            "cdn-loop": "cloudflare; loops=1; subreqs=1",
+            "cf-connecting-ip": "3.213.189.245",
+            "cf-ew-via": "15",
+            "cf-ipcountry": "US",
+            "cf-ray": "9a852a6bb6590846-IAD",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-worker": "n8n.cloud",
+            "content-type": "application/json",
+            "x-forwarded-for": "3.213.189.245, 172.70.38.26",
+            "x-forwarded-host": "yamjoem.app.n8n.cloud",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "traefik-prod-users-gwc-52-6c4f4684d5-swjxv",
+            "x-is-trusted": "yes",
+            "x-real-ip": "3.213.189.245"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "timestamp": "2025-12-03T18:35:45.760Z",
+            "event_type": "lead_not_interested",
+            "workspace": "f97e0d4e-8b1a-45fa-8e8a-e618f002c89a",
+            "campaign_id": "d143104a-b904-4ac3-9a7d-283fc863112d",
+            "unibox_url": null,
+            "campaign_name": "IM | AU/NZ/AS/ME/KSA Motion Picture & Film 11.21.2025",
+            "reply_text_snippet": "Hi Kendra,  Thanks for getting in touch.  I am afraid we don",
+            "lead_email": "shauna.moore@studiocanal.com.au",
+            "City": "Sydney",
+            "State": "New South Wales",
+            "email": "shauna.moore@studiocanal.com.au",
+            "phone": "",
+            "Country": "Australia",
+            "website": "https://studiocanal.com.au",
+            "Industry": "media production",
+            "jobTitle": "Senior Marketing Manager",
+            "lastName": "Moore",
+            "linkedIn": "http://www.linkedin.com/in/shauna-moore-675b6822",
+            "firstName": "Shauna",
+            "# Employees": "16.0",
+            "companyName": "STUDIOCANAL Australia & NZ",
+            "Company City": "Sydney",
+            "Company State": "New South Wales",
+            "Annual Revenue": "30000000.0",
+            "Company Country": "Australia",
+            "Mobile Phone 02": "",
+            "Target Industry": "Motion Pictures & Film",
+            "Company Linkedin Url": "http://www.linkedin.com/company/studiocanal-australia",
+            "Number of Retail Locations": "",
+            "step": 3,
+            "variant": 1,
+            "reply_subject": "RE: STUDIOCANAL Australia & NZ x YouTube",
+            "reply_text": "Hi Kendra,  Thanks for getting in touch.  I am afraid we don’t have a business need for your services at this time but appreciate you reaching out.  Kind regards, Shauna  From: Kendra Turner <kendra@terrieragencyhq.com> Sent: Monday, 1 December 2025 11:10 AM To: MOORE Shauna (Studiocanal) <shauna.moore@studiocanal.com.au> Subject: Re: STUDIOCANAL Australia & NZ x YouTube  Hey Shauna, not sure if I'm landing in your inbox.  Quick little idea. Would it be alright to meet you online today?  Kendra On Thu, November 27, 2025 12:05 AM, Kendra Turner <kendra@terrieragencyhq.com<mailto:kendra@terrieragencyhq.com>> wrote: Hey Shauna, So sorry, I must've been too vague last time, but this might help as you plan your upcoming content.  In a recent campaign for Official London Theatre, we activated 1,220 influencers and delivered 9M+ views, 111K+ total engagements, and reached 104M+ people across the UK.  We took care of everything, from research and creator outreach to campaign execution and reporting. We turned product and service gifting into premium content across Instagram, TikTok, and YouTube. All outreach was done using the brand’s own channels, so they kept the relationships, and we tracked every view, click, and comment to show clear performance.  Here’s a case study deck from brands we manage: https://pitch.com/v/event-experience---case-studies-u5qrbf<https://urldefense.com/v3/__https:/pitch.com/v/event-experience---case-studies-u5qrbf__;!!BbMIO5B-jb9uIA!EfQDq_UvSmBePvg95CYOFGRpEPsRxS7RoQQ6FtGvS4dK9JI0gY2hbgjjfIK1eDNH2-bNKgTL5PM-7gyhZ0ZPY4CZsGuZuA$>  Kendra  Sent from my iPhone On Tue, November 25, 2025 10:27 PM, Kendra Turner <kendra@terrieragencyhq.com<mailto:kendra@terrieragencyhq.com>> wrote: Hello Shauna, would it be alright to send you gifted influencer marketing ideas we produced for media production brands?  We’re looking for brands we can feature through socials like Instagram, TikTok, and YouTube, and STUDIOCANAL Australia & NZ stood out while I was looking "
+          },
+          "webhookUrl": "https://yamjoem.app.n8n.cloud/webhook/instantly-lead-events",
+          "executionMode": "production"
+        }
+      }
+    ],
+    "Normalize Payload": [
+      {
+        "json": {
+          "leadEmail": "shauna.moore@studiocanal.com.au",
+          "eventType": "lead_not_interested",
+          "mappedStatus": "lead_not_interested",
+          "timestamp": "2025-12-03T18:55:11.282Z",
+          "raw": {
+            "headers": {
+              "host": "yamjoem.app.n8n.cloud",
+              "user-agent": "axios/0.21.4",
+              "content-length": "3187",
+              "accept": "application/json, text/plain, */*",
+              "accept-encoding": "gzip, br",
+              "cdn-loop": "cloudflare; loops=1; subreqs=1",
+              "cf-connecting-ip": "3.213.189.245",
+              "cf-ew-via": "15",
+              "cf-ipcountry": "US",
+              "cf-ray": "9a852a6bb6590846-IAD",
+              "cf-visitor": "{\"scheme\":\"https\"}",
+              "cf-worker": "n8n.cloud",
+              "content-type": "application/json",
+              "x-forwarded-for": "3.213.189.245, 172.70.38.26",
+              "x-forwarded-host": "yamjoem.app.n8n.cloud",
+              "x-forwarded-port": "443",
+              "x-forwarded-proto": "https",
+              "x-forwarded-server": "traefik-prod-users-gwc-52-6c4f4684d5-swjxv",
+              "x-is-trusted": "yes",
+              "x-real-ip": "3.213.189.245"
+            },
+            "params": {},
+            "query": {},
+            "body": {
+              "timestamp": "2025-12-03T18:35:45.760Z",
+              "event_type": "lead_not_interested",
+              "workspace": "f97e0d4e-8b1a-45fa-8e8a-e618f002c89a",
+              "campaign_id": "d143104a-b904-4ac3-9a7d-283fc863112d",
+              "unibox_url": null,
+              "campaign_name": "IM | AU/NZ/AS/ME/KSA Motion Picture & Film 11.21.2025",
+              "reply_text_snippet": "Hi Kendra,  Thanks for getting in touch.  I am afraid we don",
+              "lead_email": "shauna.moore@studiocanal.com.au",
+              "City": "Sydney",
+              "State": "New South Wales",
+              "email": "shauna.moore@studiocanal.com.au",
+              "phone": "",
+              "Country": "Australia",
+              "website": "https://studiocanal.com.au",
+              "Industry": "media production",
+              "jobTitle": "Senior Marketing Manager",
+              "lastName": "Moore",
+              "linkedIn": "http://www.linkedin.com/in/shauna-moore-675b6822",
+              "firstName": "Shauna",
+              "# Employees": "16.0",
+              "companyName": "STUDIOCANAL Australia & NZ",
+              "Company City": "Sydney",
+              "Company State": "New South Wales",
+              "Annual Revenue": "30000000.0",
+              "Company Country": "Australia",
+              "Mobile Phone 02": "",
+              "Target Industry": "Motion Pictures & Film",
+              "Company Linkedin Url": "http://www.linkedin.com/company/studiocanal-australia",
+              "Number of Retail Locations": "",
+              "step": 3,
+              "variant": 1,
+              "reply_subject": "RE: STUDIOCANAL Australia & NZ x YouTube",
+              "reply_text": "Hi Kendra,  Thanks for getting in touch.  I am afraid we don’t have a business need for your services at this time but appreciate you reaching out.  Kind regards, Shauna  From: Kendra Turner <kendra@terrieragencyhq.com> Sent: Monday, 1 December 2025 11:10 AM To: MOORE Shauna (Studiocanal) <shauna.moore@studiocanal.com.au> Subject: Re: STUDIOCANAL Australia & NZ x YouTube  Hey Shauna, not sure if I'm landing in your inbox.  Quick little idea. Would it be alright to meet you online today?  Kendra On Thu, November 27, 2025 12:05 AM, Kendra Turner <kendra@terrieragencyhq.com<mailto:kendra@terrieragencyhq.com>> wrote: Hey Shauna, So sorry, I must've been too vague last time, but this might help as you plan your upcoming content.  In a recent campaign for Official London Theatre, we activated 1,220 influencers and delivered 9M+ views, 111K+ total engagements, and reached 104M+ people across the UK.  We took care of everything, from research and creator outreach to campaign execution and reporting. We turned product and service gifting into premium content across Instagram, TikTok, and YouTube. All outreach was done using the brand’s own channels, so they kept the relationships, and we tracked every view, click, and comment to show clear performance.  Here’s a case study deck from brands we manage: https://pitch.com/v/event-experience---case-studies-u5qrbf<https://urldefense.com/v3/__https:/pitch.com/v/event-experience---case-studies-u5qrbf__;!!BbMIO5B-jb9uIA!EfQDq_UvSmBePvg95CYOFGRpEPsRxS7RoQQ6FtGvS4dK9JI0gY2hbgjjfIK1eDNH2-bNKgTL5PM-7gyhZ0ZPY4CZsGuZuA$>  Kendra  Sent from my iPhone On Tue, November 25, 2025 10:27 PM, Kendra Turner <kendra@terrieragencyhq.com<mailto:kendra@terrieragencyhq.com>> wrote: Hello Shauna, would it be alright to send you gifted influencer marketing ideas we produced for media production brands?  We’re looking for brands we can feature through socials like Instagram, TikTok, and YouTube, and STUDIOCANAL Australia & NZ stood out while I was looking "
+            },
+            "webhookUrl": "https://yamjoem.app.n8n.cloud/webhook/instantly-lead-events",
+            "executionMode": "production"
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Insty Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Search records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search records": {
+      "main": [
+        [
+          {
+            "node": "Record Found?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Found?1": {
+      "main": [
+        [
+          {
+            "node": "Update record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a208a52b-7a73-4916-93ac-e5fc17141d29",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7c9587012d63e2d42653a46bd0fbfc2b6788b0b347581abbd8fc55d8bc1fae57"
+  },
+  "id": "V9RaTnxdHF76AR8b",
+  "tags": []
+}

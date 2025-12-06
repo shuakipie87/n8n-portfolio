@@ -1,0 +1,467 @@
+{
+  "name": "My workflow 4",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.attended}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "7b4b0d91-2c0b-4bf5-bd99-9099ad7a6dab",
+      "name": "Did Attend?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -1424,
+        -304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.INSTANTLY_BASE_URL || 'https://api.instantly.ai/api/v1'}}/leads/{{$('Get Instantly Lead').item.json.id}}/status",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "Meeting Completed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0fed32d2-7492-4630-b5f4-a78eeaa6d7a6",
+      "name": "Update: Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -1200,
+        -560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.INSTANTLY_BASE_URL || 'https://api.instantly.ai/api/v1'}}/leads/{{$('Get Instantly Lead').item.json.id}}/status",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "No Show"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a28676eb-c5e1-4e38-8d9f-4968b2d0655d",
+      "name": "Update: No-Show",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -1168,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "events": [
+          "invitee.created"
+        ]
+      },
+      "id": "5d4bcfcc-a12a-4081-bd4a-b5aa1d627fc3",
+      "name": "Trigger: Booking Created",
+      "type": "n8n-nodes-base.calendlyTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2656,
+        -304
+      ],
+      "webhookId": "e4658fcc-6819-4d23-8c61-11423d70eadd",
+      "credentials": {
+        "calendlyOAuth2Api": {
+          "id": "1FDAYSs9CAzbEtFY",
+          "name": "Calendly account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "lead",
+        "operation": "getMany",
+        "filters": {}
+      },
+      "id": "64123530-b55e-4dfa-805f-27919ba8e9ac",
+      "name": "Instantly: Find Lead",
+      "type": "n8n-nodes-instantly.instantly",
+      "typeVersion": 1,
+      "position": [
+        -2448,
+        -304
+      ],
+      "credentials": {
+        "instantlyApi": {
+          "id": "GtVc5beU9aN8XtWZ",
+          "name": "Instantly account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "lead",
+        "operation": "update",
+        "leadId": {
+          "__rl": true,
+          "value": "={{ $json.items[0].id }}",
+          "mode": "id"
+        },
+        "updateFields": {
+          "lt_interest_status": 2
+        }
+      },
+      "id": "cbe24bb4-e9ee-4782-82ec-3d3927a0da8e",
+      "name": "Instantly: Set Status Booked",
+      "type": "n8n-nodes-instantly.instantly",
+      "typeVersion": 1,
+      "position": [
+        -2272,
+        -304
+      ],
+      "credentials": {
+        "instantlyApi": {
+          "id": "GtVc5beU9aN8XtWZ",
+          "name": "Instantly account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Choose the timestamp you want to use\nconst item = items[0].json;\n\nconst endTimeStr = item.timestamp_last_reply; // ← Change this if needed\nif (!endTimeStr) {\n  throw new Error(\"timestamp_last_reply is missing in the lead data\");\n}\n\n// Buffer (defaults to 10 min if env missing)\nconst bufferMin = parseInt($env.WAIT_BUFFER_MINUTES || '10', 10);\n\n// Parse the date\nconst endDate = new Date(endTimeStr);\nif (isNaN(endDate.getTime())) {\n  throw new Error(\"Invalid timestamp format: \" + endTimeStr);\n}\n\n// Add buffer minutes\nconst waitDate = new Date(endDate.getTime() + bufferMin * 60 * 1000);\n\nreturn [{\n  json: {\n    waitUntil: waitDate.toISOString(),\n    originalEnd: endTimeStr,\n    leadId: item.id,\n    email: item.email,\n  }\n}];\n"
+      },
+      "id": "c5487888-c184-44b1-ae96-ddaa986276c8",
+      "name": "Calc End Time + Buffer1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -2080,
+        -304
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "specificTime",
+        "dateTime": "={{$json.waitUntil}}"
+      },
+      "id": "b99e48a4-06aa-49f7-979d-7471535d2f73",
+      "name": "Wait Until End Time1",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        -1872,
+        -304
+      ],
+      "webhookId": "27c2d7c6-4d5a-448d-9b25-f7128faf0a2d"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.ATTENDANCE_HELPER_URL}}",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"email\": \"{{$json.inviteeEmail}}\",\n  \"startTime\": \"{{$json.start}}\",\n  \"endTime\": \"{{$json.originalEnd}}\",\n  \"conferenceId\": \"{{$json.conferenceId}}\"\n}",
+        "options": {}
+      },
+      "id": "6edffb15-1e2f-4108-8199-cbab9de8b49a",
+      "name": "Check Attendance API1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -1648,
+        -304
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Trigger Calendy Booking using Google WorksSpace Admin API\n",
+        "height": 80,
+        "width": 496
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2224,
+        -448
+      ],
+      "id": "0f3aaec4-6423-45a6-bc46-65c3659aa82d",
+      "name": "Sticky Note1"
+    }
+  ],
+  "pinData": {
+    "Trigger: Booking Created": [
+      {
+        "json": {
+          "created_at": "2025-12-04T15:43:51.000000Z",
+          "created_by": "https://api.calendly.com/users/6de04eb9-574b-4e7e-9861-7ce692859cb7",
+          "event": "invitee.created",
+          "payload": {
+            "cancel_url": "https://calendly.com/cancellations/67cf3641-f6f0-44b2-b425-21528bed9678",
+            "created_at": "2025-12-04T15:43:50.924035Z",
+            "email": "medyoshuaki@gmail.com",
+            "event": "https://api.calendly.com/scheduled_events/5b70cbee-0295-4673-a6e3-02c1c5dd884d",
+            "first_name": null,
+            "invitee_scheduled_by": null,
+            "last_name": null,
+            "name": "Joshua",
+            "new_invitee": null,
+            "no_show": null,
+            "old_invitee": null,
+            "payment": null,
+            "questions_and_answers": [
+              {
+                "answer": "Test",
+                "position": 0,
+                "question": "Please share anything that will help prepare for our meeting."
+              }
+            ],
+            "reconfirmation": null,
+            "reschedule_url": "https://calendly.com/reschedulings/67cf3641-f6f0-44b2-b425-21528bed9678",
+            "rescheduled": false,
+            "routing_form_submission": null,
+            "scheduled_event": {
+              "created_at": "2025-12-04T15:43:50.907467Z",
+              "end_time": "2025-12-04T23:15:00.000000Z",
+              "event_guests": [],
+              "event_memberships": [
+                {
+                  "user": "https://api.calendly.com/users/6de04eb9-574b-4e7e-9861-7ce692859cb7",
+                  "user_email": "joshuadingcong00@gmail.com",
+                  "user_name": "Joem Yams"
+                }
+              ],
+              "event_type": "https://api.calendly.com/event_types/13af9640-801f-423f-bf6c-8a9e91fd5fbe",
+              "invitees_counter": {
+                "total": 1,
+                "active": 1,
+                "limit": 1
+              },
+              "location": {
+                "join_url": "https://calendly.com/events/5b70cbee-0295-4673-a6e3-02c1c5dd884d/google_meet",
+                "status": "processing",
+                "type": "google_conference"
+              },
+              "meeting_notes_html": null,
+              "meeting_notes_plain": null,
+              "name": "30 Minute Meeting",
+              "start_time": "2025-12-04T23:00:00.000000Z",
+              "status": "active",
+              "updated_at": "2025-12-04T15:43:50.907467Z",
+              "uri": "https://api.calendly.com/scheduled_events/5b70cbee-0295-4673-a6e3-02c1c5dd884d"
+            },
+            "scheduling_method": null,
+            "status": "active",
+            "text_reminder_number": null,
+            "timezone": "Asia/Manila",
+            "tracking": {
+              "utm_campaign": null,
+              "utm_source": null,
+              "utm_medium": null,
+              "utm_content": null,
+              "utm_term": null,
+              "salesforce_uuid": null
+            },
+            "updated_at": "2025-12-04T15:43:50.924035Z",
+            "uri": "https://api.calendly.com/scheduled_events/5b70cbee-0295-4673-a6e3-02c1c5dd884d/invitees/67cf3641-f6f0-44b2-b425-21528bed9678"
+          }
+        }
+      }
+    ],
+    "Instantly: Find Lead": [
+      {
+        "json": {
+          "items": [
+            {
+              "id": "019ae96c-9503-791d-be2b-10f465ae143b",
+              "timestamp_created": "2025-12-04T12:53:18.724Z",
+              "timestamp_updated": "2025-12-04T12:54:13.645Z",
+              "organization": "893fdd65-6e3c-4678-831e-e91d7eaf5c8c",
+              "status": 3,
+              "email_open_count": 0,
+              "email_reply_count": 6,
+              "email_click_count": 0,
+              "company_domain": "medyoshuaki@gmail.com",
+              "status_summary": {},
+              "campaign": "ecdb2757-0d00-41f4-a80f-1dbbb1202da8",
+              "email": "medyoshuaki@gmail.com",
+              "payload": {
+                "email": "medyoshuaki@gmail.com"
+              },
+              "lt_interest_status": 2,
+              "timestamp_last_reply": "2025-12-04T15:44:09.449Z",
+              "timestamp_last_interest_change": "2025-12-05T04:33:59.319Z",
+              "upload_method": "manual",
+              "assigned_to": "7b18e529-763c-4338-b275-e36fc2940437",
+              "timestamp_last_touch": "2025-12-04T15:44:09.449Z",
+              "esp_code": 1
+            }
+          ],
+          "next_starting_after": "019ae96c-9503-791d-be2b-10f465ae143b"
+        }
+      }
+    ],
+    "Instantly: Set Status Booked": [
+      {
+        "json": {
+          "id": "019ae96c-9503-791d-be2b-10f465ae143b",
+          "timestamp_created": "2025-12-04T12:53:18.724Z",
+          "timestamp_updated": "2025-12-04T12:54:13.645Z",
+          "organization": "893fdd65-6e3c-4678-831e-e91d7eaf5c8c",
+          "status": 3,
+          "email_open_count": 0,
+          "email_reply_count": 6,
+          "email_click_count": 0,
+          "company_domain": "medyoshuaki@gmail.com",
+          "status_summary": {},
+          "campaign": "ecdb2757-0d00-41f4-a80f-1dbbb1202da8",
+          "email": "medyoshuaki@gmail.com",
+          "payload": {
+            "email": "medyoshuaki@gmail.com"
+          },
+          "lt_interest_status": 2,
+          "timestamp_last_reply": "2025-12-04T15:44:09.449Z",
+          "timestamp_last_interest_change": "2025-12-05T04:33:59.319Z",
+          "upload_method": "manual",
+          "assigned_to": "7b18e529-763c-4338-b275-e36fc2940437",
+          "timestamp_last_touch": "2025-12-04T15:44:09.449Z",
+          "esp_code": 1
+        }
+      }
+    ],
+    "Calc End Time + Buffer1": [
+      {
+        "json": {
+          "waitUntil": "2025-12-04T15:54:09.449Z",
+          "originalEnd": "2025-12-04T15:44:09.449Z",
+          "leadId": "019ae96c-9503-791d-be2b-10f465ae143b",
+          "email": "medyoshuaki@gmail.com"
+        }
+      }
+    ],
+    "Wait Until End Time1": [
+      {
+        "json": {
+          "waitUntil": "2025-12-04T15:54:09.449Z",
+          "originalEnd": "2025-12-04T15:44:09.449Z",
+          "leadId": "019ae96c-9503-791d-be2b-10f465ae143b",
+          "email": "medyoshuaki@gmail.com"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Did Attend?": {
+      "main": [
+        [
+          {
+            "node": "Update: Completed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update: No-Show",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger: Booking Created": {
+      "main": [
+        [
+          {
+            "node": "Instantly: Find Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instantly: Find Lead": {
+      "main": [
+        [
+          {
+            "node": "Instantly: Set Status Booked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instantly: Set Status Booked": {
+      "main": [
+        [
+          {
+            "node": "Calc End Time + Buffer1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calc End Time + Buffer1": {
+      "main": [
+        [
+          {
+            "node": "Wait Until End Time1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Until End Time1": {
+      "main": [
+        [
+          {
+            "node": "Check Attendance API1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Attendance API1": {
+      "main": [
+        [
+          {
+            "node": "Did Attend?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d4a499f2-8030-4f5f-8b51-a8109b8bc9b7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e1e9571e43fd35fafdb80e63a0d94f709c4bb7aaacb99a4c9e668ee772c43ec9"
+  },
+  "id": "2EczhQ1UYM6TocmC",
+  "tags": []
+}
