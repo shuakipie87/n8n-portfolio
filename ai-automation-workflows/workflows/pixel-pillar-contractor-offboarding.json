@@ -1,0 +1,656 @@
+{
+  "name": "Pixel & Pillar - Contractor Offboarding & Asset Recovery",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "b3021a56-66ba-422d-9332-e5335b1aad18",
+      "name": "Schedule Trigger - Daily 9AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1616,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "30023daf-68e0-40ae-9c64-acc49a007007",
+      "name": "Set Source - googleSheets or airtable",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1408,
+        304
+      ],
+      "notes": "Change value to 'airtable' to switch source. Default: googleSheets."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "src-sheets",
+                    "leftValue": "={{ $json.source }}",
+                    "rightValue": "googleSheets",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "src-airtable",
+                    "leftValue": "={{ $json.source }}",
+                    "rightValue": "airtable",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7d52d543-7172-4706-9e0c-1bd637a51aea",
+      "name": "Switch Source",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1184,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1-Staff-Directory",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "3eab9efc-b229-4170-9f3c-230313dce22e",
+      "name": "Google Sheets - Read Contractors",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -960,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_TABLE_ID",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "fa53dbcc-1f7d-4194-b9db-25aec726b3ee",
+      "name": "Airtable - Read Contractors",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -960,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "b3ad1d13-cc90-4ad4-b9d6-66b44ea69720",
+      "name": "Merge Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -720,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compute daysUntilEnd for every contractor row.\n// Normalizes column names from either Google Sheets or Airtable shape.\n// Outputs one item per contractor with a deterministic schema.\n\nconst items = $input.all();\nconst out = [];\nconst now = new Date();\nconst todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));\n\nfor (const it of items) {\n  const j = it.json || {};\n  const fields = j.fields || j; // Airtable wraps in .fields, Sheets is flat\n\n  const name = fields.Name || fields.name || fields['Contractor Name'] || '';\n  const email = fields.Email || fields.email || '';\n  const role = fields.Role || fields.role || '';\n  const endDateRaw = fields.EndDate || fields.endDate || fields['End Date'] || '';\n  const hasHardwareRaw = fields.HasHardware ?? fields.hasHardware ?? fields['Has Hardware'] ?? false;\n  const hardwareDetails = fields.HardwareDetails || fields.hardwareDetails || '';\n  const slackUserId = fields.SlackUserId || fields.slackUserId || '';\n  const status = fields.Status || fields.status || 'active';\n\n  // Validate required fields\n  if (!name) {\n    out.push({ json: { _error: true, _reason: 'missing_name', raw: fields, daysUntilEnd: null } });\n    continue;\n  }\n  if (!email || !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(String(email))) {\n    out.push({ json: { _error: true, _reason: 'missing_or_invalid_email', name, raw: fields, daysUntilEnd: null } });\n    continue;\n  }\n\n  // Parse end date (accept ISO YYYY-MM-DD)\n  const endDate = new Date(endDateRaw);\n  if (isNaN(endDate.getTime())) {\n    out.push({ json: { _error: true, _reason: 'malformed_date', name, email, endDateRaw, daysUntilEnd: null } });\n    continue;\n  }\n  const endDateUtc = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate()));\n  const daysUntilEnd = Math.round((endDateUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));\n\n  // Normalize hasHardware (TRUE/true/1/yes => true)\n  const hasHardware = /^(true|1|yes|y)$/i.test(String(hasHardwareRaw));\n\n  out.push({\n    json: {\n      name,\n      email,\n      role,\n      endDate: endDateUtc.toISOString().slice(0, 10),\n      daysUntilEnd,\n      hasHardware,\n      hardwareDetails,\n      slackUserId,\n      status,\n      _error: false\n    }\n  });\n}\n\nreturn out;"
+      },
+      "id": "4aaf13c7-a225-4a76-b1ec-5821d453627d",
+      "name": "Code - Compute daysUntilEnd",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "rule-error",
+                    "leftValue": "={{ $json._error }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "rule-7days",
+                    "leftValue": "={{ $json.daysUntilEnd }}",
+                    "rightValue": 7,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "rule-lastday",
+                    "leftValue": "={{ $json.daysUntilEnd }}",
+                    "rightValue": 0,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "rule-security",
+                    "leftValue": "={{ $json.daysUntilEnd }}",
+                    "rightValue": 0,
+                    "operator": {
+                      "type": "number",
+                      "operation": "lt"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "none"
+        }
+      },
+      "id": "d7ef1be9-e017-4d5f-a4dc-6f26b31e16bb",
+      "name": "Switch - Offboarding Stage",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -256,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#hr-private",
+          "mode": "name"
+        },
+        "text": "=:calendar: *Exit Interview Reminder*\n\nContractor *{{ $json.name }}* ({{ $json.role }}) ends in 7 days on *{{ $json.endDate }}*.\n\nPlease schedule the exit interview this week.\nEmail: {{ $json.email }}{{ $json.hasHardware ? '\\nHardware on file: ' + $json.hardwareDetails : '' }}",
+        "otherOptions": {}
+      },
+      "id": "3115637e-afc7-4044-b91f-b5b089e29b0f",
+      "name": "Slack - HR 7-Day Reminder",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://pixelandpillar.example.com"
+            },
+            {
+              "name": "X-Title",
+              "value": "Pixel & Pillar Contractor Offboarding"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "string",
+        "body": "={{ JSON.stringify({ model: 'openai/gpt-4o-mini', temperature: 0.4, max_tokens: 600, messages: [{ role: 'system', content: 'You are an HR assistant at Pixel & Pillar, a Shopify development agency. Write a warm but professional final-day email checklist for an outgoing contractor. Keep it under 250 words. Use a clear bulleted checklist for: final time-log submission, knowledge transfer notes, repository handoff, hardware return (if applicable), final invoice. Personalize tone to their role. Plain text only, no markdown.' }, { role: 'user', content: 'Contractor name: ' + $json.name + '\\nRole: ' + $json.role + '\\nEnd date: ' + $json.endDate + '\\nHas company hardware: ' + ($json.hasHardware ? 'YES \u2014 ' + $json.hardwareDetails : 'no') }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "00536987-8352-4617-aaa3-dde68571affe",
+      "name": "HTTP - OpenRouter Personalize Checklist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge AI checklist back onto contractor row so downstream Gmail can use both\nconst ai = $input.first().json;\nconst contractor = $('Switch - Offboarding Stage').item.json;\n\nlet checklist = '';\ntry {\n  checklist = ai.choices?.[0]?.message?.content || '';\n} catch (e) {\n  checklist = '';\n}\n\nif (!checklist || checklist.length < 20) {\n  // Fallback if AI fails so the email still goes out\n  checklist = `Hi ${contractor.name},\\n\\nToday is your final day with Pixel & Pillar. Please complete the following before EOD:\\n\\n- Submit your final time log\\n- Push any in-flight branches and add handoff notes to the project README\\n- Confirm repository access can be revoked\\n${contractor.hasHardware ? '- Coordinate hardware return: ' + contractor.hardwareDetails + '\\n' : ''}- Submit your final invoice\\n\\nThank you for your work on the team.\\n\\nPixel & Pillar HR`;\n}\n\nreturn [{\n  json: {\n    ...contractor,\n    personalizedChecklist: checklist\n  }\n}];"
+      },
+      "id": "dc8ac2f9-2ff8-48ac-9c3b-df34c3db1575",
+      "name": "Code - Merge AI Checklist",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Your final day at Pixel & Pillar - {{ $json.endDate }}",
+        "emailType": "text",
+        "message": "={{ $json.personalizedChecklist }}",
+        "options": {}
+      },
+      "id": "435642be-8d05-4e73-858e-94e3eec2f6f5",
+      "name": "Gmail - Send Last-Day Checklist",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        432,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#devops",
+          "mode": "name"
+        },
+        "text": "=:rotating_light: *ACCESS REVOCATION REQUIRED*\n\nContractor *{{ $json.name }}* ({{ $json.role }}) \u2014 end date {{ $json.endDate }} ({{ $json.daysUntilEnd === 0 ? 'today' : Math.abs($json.daysUntilEnd) + ' day(s) ago' }}).\n\nPlease revoke immediately:\n- GitHub org access (all repos)\n- AWS IAM user / role\n- Shopify Partner dashboard\n- Internal Slack workspace (deactivate user)\n\nEmail on file: {{ $json.email }}{{ $json.slackUserId ? '\\nSlack user: <@' + $json.slackUserId + '>' : '' }}",
+        "otherOptions": {}
+      },
+      "id": "4d91b64b-5fe5-4299-9a6b-c7e156deedc0",
+      "name": "Slack - DevOps Security Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "if-has-hardware",
+              "leftValue": "={{ $json.hasHardware }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "fbb3b2d1-c83b-4329-a282-88c0f83d0311",
+      "name": "IF - Has Hardware",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        224,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#logistics",
+          "mode": "name"
+        },
+        "text": "=:package: *Hardware Return Shipping Label Needed*\n\nContractor: *{{ $json.name }}* ({{ $json.role }})\nHardware: {{ $json.hardwareDetails }}\nShip-to email: {{ $json.email }}\nContract end date: {{ $json.endDate }}\n\nPlease generate a prepaid return label and email it to the contractor today.",
+        "otherOptions": {}
+      },
+      "id": "769a16a0-9000-41b3-a26e-065ab88ed92a",
+      "name": "Slack - Logistics Shipping Request",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        432,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#hr-private",
+          "mode": "name"
+        },
+        "text": "=:warning: *Contractor row failed validation*\n\nReason: {{ $json._reason }}\nName: {{ $json.name || '(missing)' }}\nEmail: {{ $json.email || '(missing)' }}\nEnd date raw: {{ $json.endDateRaw || '(unparseable)' }}\n\nPlease correct the source row.",
+        "otherOptions": {}
+      },
+      "id": "e28c4a35-69ad-4a83-9310-a1187221d666",
+      "name": "Slack - HR Validation Error",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        624
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger - Daily 9AM": {
+      "main": [
+        [
+          {
+            "node": "Set Source - googleSheets or airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Source - googleSheets or airtable": {
+      "main": [
+        [
+          {
+            "node": "Switch Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Source": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Read Contractors",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Airtable - Read Contractors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Read Contractors": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable - Read Contractors": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Sources": {
+      "main": [
+        [
+          {
+            "node": "Code - Compute daysUntilEnd",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Compute daysUntilEnd": {
+      "main": [
+        [
+          {
+            "node": "Switch - Offboarding Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Offboarding Stage": {
+      "main": [
+        [
+          {
+            "node": "Slack - HR Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack - HR 7-Day Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP - OpenRouter Personalize Checklist",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack - DevOps Security Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF - Has Hardware",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - OpenRouter Personalize Checklist": {
+      "main": [
+        [
+          {
+            "node": "Code - Merge AI Checklist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Merge AI Checklist": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Send Last-Day Checklist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Has Hardware": {
+      "main": [
+        [
+          {
+            "node": "Slack - Logistics Shipping Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-04-26T15:52:11.261Z",
+      "createdAt": "2026-04-26T15:52:11.261Z",
+      "id": "0yTCVrtPHr949gEA",
+      "name": "contractor-offboarding"
+    },
+    {
+      "updatedAt": "2026-04-20T12:18:24.732Z",
+      "createdAt": "2026-04-20T12:18:24.732Z",
+      "id": "2M12LRaFUXKDkvAG",
+      "name": "asset-recovery"
+    },
+    {
+      "updatedAt": "2026-04-26T15:52:11.256Z",
+      "createdAt": "2026-04-26T15:52:11.256Z",
+      "id": "TjV8LJ5aMAwbiADF",
+      "name": "pixel-and-pillar"
+    },
+    {
+      "updatedAt": "2026-04-26T15:52:11.261Z",
+      "createdAt": "2026-04-26T15:52:11.261Z",
+      "id": "sWZ2b8BbApdUSJVF",
+      "name": "testing"
+    }
+  ]
+}

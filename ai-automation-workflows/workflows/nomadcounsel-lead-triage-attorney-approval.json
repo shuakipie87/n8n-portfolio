@@ -1,0 +1,1349 @@
+{
+  "name": "NomadCounsel \u2014 Lead Triage & Attorney Approval System",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## NomadCounsel \u2014 Lead Triage & Attorney Approval System\n\n**Purpose:** Automates intake, risk classification, partner approval, and routing of Digital Nomad visa applicants for high-net-worth individuals.\n\n**Workflow Paths:**\n1. \ud83d\udd34 **High Risk** \u2192 Partner Approval Loop \u2192 Approve (Master Leads) or Reject (Rejection Email)\n2. \ud83d\udfe2 **Standard** \u2192 Direct to Paralegal Queue Sheet\n3. \u26a0\ufe0f **Error** \u2192 Admin Alert via Slack + Email\n\n**Triage Criteria (ANY = High Risk):**\n- Investment amount \u2265 $500,000\n- Previous visa denials \u2265 1\n- Nationality from a designated high-risk country list\n\n**Key Design Notes:**\n- Webhook responds immediately after Normalize (HTTP closes, workflow continues async)\n- After Wait resumes, lead data is recovered via $('Set \u2014 Tag as High Risk').item.json\n- All Set nodes use mode:raw with Object.assign for clean JSON mapping\n\n**Last Updated:** 2026-04-17  |  **Version:** 2.0.0\n**Owner:** NomadCounsel Operations",
+        "height": 368,
+        "width": 460,
+        "color": 5
+      },
+      "id": "f6e0dd5d-094c-4a94-9043-ce87bb99406d",
+      "name": "Sticky Note \u2014 Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        8752,
+        7712
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### \ud83d\udce5 STAGE 1: INTAKE & TRIAGE\nWebhook \u2192 Normalize \u2192 **Respond immediately** \u2192 Triage IF\n\nHTTP connection closes right after Normalize so the intake form gets\na fast ACK with a reference number. All downstream work runs async.\n\n**Test Pins available (5 cases):**\n\u2022 Case 1 \u2014 High Risk: Russia $750K 1 denial\n\u2022 Case 2 \u2014 High Risk: China $1.2M (investment only)\n\u2022 Case 3 \u2014 High Risk: Venezuela $80K (nationality only)\n\u2022 Case 4 \u2014 Standard: UK $85K clean\n\u2022 Case 5 \u2014 Standard: Brazil $120K clean",
+        "height": 264,
+        "width": 500,
+        "color": 7
+      },
+      "id": "3ff53677-07af-46ee-8324-e7cbc88b73a2",
+      "name": "Sticky Note \u2014 Intake & Triage",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        9360,
+        7648
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### \ud83d\udfe2 STAGE 2: STANDARD \u2014 PARALEGAL QUEUE\nBypasses partner approval entirely.\nLead is tagged, written to Paralegal Queue sheet, and Slack notifies the paralegal team.",
+        "height": 120,
+        "width": 420,
+        "color": 4
+      },
+      "id": "8e91299d-5352-4f9f-be6d-644cf445c7f0",
+      "name": "Sticky Note \u2014 Standard Path",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        10032,
+        8352
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### \u26a0\ufe0f CATCH-ALL ERROR HANDLER\nFires on any unhandled workflow error.\nSends alert to Slack #workflow-errors AND admin email\nwith execution ID, failed node name, and error message.",
+        "height": 152,
+        "width": 380,
+        "color": 6
+      },
+      "id": "f1213aa5-381e-46e7-965d-d74a2d731dde",
+      "name": "Sticky Note \u2014 Error Handler",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        8768,
+        8464
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nomadcounsel-intake",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "rawBody": false
+        }
+      },
+      "id": "284543c1-31d5-42c5-88f9-ad34386c4404",
+      "name": "Webhook \u2014 Intake Form",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        9232,
+        7984
+      ],
+      "notesInFlow": true,
+      "notes": "Public intake endpoint. responseMode=responseNode so Respond to Webhook controls the reply.\nTest with pinned data: select any of the 5 pinned cases to trigger High Risk or Standard paths."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ {\n  \"leadId\": $json.body.leadId || ('NC-' + $now.toFormat('yyyyMMdd') + '-' + Math.floor(Math.random() * 9000 + 1000).toString()),\n  \"submittedAt\": $json.body.submittedAt || $now.toISO(),\n  \"fullName\": ($json.body.fullName || $json.body.name || 'Unknown').trim(),\n  \"email\": ($json.body.email || '').toLowerCase().trim(),\n  \"phone\": $json.body.phone || 'Not provided',\n  \"nationality\": ($json.body.nationality || '').trim(),\n  \"investmentAmount\": Number($json.body.investmentAmount) || 0,\n  \"previousDenials\": Number($json.body.previousDenials) || 0,\n  \"visaType\": $json.body.visaType || 'Digital Nomad Visa',\n  \"targetCountry\": ($json.body.targetCountry || '').trim(),\n  \"notes\": $json.body.notes || '',\n  \"sourceIP\": $json.headers['x-forwarded-for'] || $json.headers['x-real-ip'] || 'unknown'\n} }}",
+        "options": {}
+      },
+      "id": "c587322c-d031-49ee-a801-7de32612bc24",
+      "name": "Set \u2014 Normalize Lead Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        9456,
+        7984
+      ],
+      "notes": "JSON raw mode. Extracts all fields from $json.body (webhook payload), generates a unique leadId, timestamps the submission, and normalises strings. Output is a clean flat object \u2014 no nested body/headers."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  \"success\": true,\n  \"leadId\": $json.leadId,\n  \"message\": \"Your application has been received and is under review. Reference: \" + $json.leadId,\n  \"submittedAt\": $json.submittedAt\n}) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "X-Lead-Id",
+                "value": "={{ $json.leadId }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "9f88610e-566d-432a-a012-d03a6b14334c",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        9664,
+        7984
+      ],
+      "notesInFlow": true,
+      "notes": "Closes the HTTP connection immediately and returns a 200 JSON ACK with the leadId. Placed BEFORE triage so the form submitter always gets a fast response regardless of which path executes downstream."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-investment",
+              "leftValue": "={{ $json.investmentAmount }}",
+              "rightValue": 500000,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "cond-denials",
+              "leftValue": "={{ $json.previousDenials }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "cond-nationality",
+              "leftValue": "={{ $json.nationality }}",
+              "rightValue": "Iran,Russia,North Korea,Belarus,Cuba,Syria,Venezuela,Myanmar,Sudan,Zimbabwe,Libya,Somalia",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "d0b9a788-f6a3-4047-be4a-5bae0ade1420",
+      "name": "IF \u2014 High Risk Triage",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        9888,
+        7984
+      ],
+      "notes": "HIGH RISK if ANY condition is true:\n  \u2022 Investment \u2265 $500,000\n  \u2022 Previous visa denials \u2265 1\n  \u2022 Nationality in restricted country list\n\nOutput TRUE  (index 0) \u2192 High Risk path\nOutput FALSE (index 1) \u2192 Standard path"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ Object.assign({}, $json, {\n  \"riskLevel\": \"High Risk\",\n  \"riskReasons\": [\n    $json.investmentAmount >= 500000 ? 'Investment \u2265 $500K' : null,\n    $json.previousDenials >= 1 ? 'Prior Denial(s): ' + $json.previousDenials : null,\n    ['Iran','Russia','North Korea','Belarus','Cuba','Syria','Venezuela','Myanmar','Sudan','Zimbabwe','Libya','Somalia'].indexOf($json.nationality) >= 0 ? 'High-Risk Nationality: ' + $json.nationality : null\n  ].filter(function(r){ return r !== null; }).join(', '),\n  \"status\": \"Awaiting Partner Review\"\n}) }}",
+        "options": {}
+      },
+      "id": "446b4b96-f2ea-47ff-a6d5-580365033a28",
+      "name": "Set \u2014 Tag as High Risk",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        10112,
+        7856
+      ],
+      "notes": "Spreads all normalized lead fields then appends riskLevel, computed riskReasons string, and initial status.\nIMPORTANT: This node's output is referenced AFTER the Wait resumes using $('Set \u2014 Tag as High Risk').item.json to recover the lead data."
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ARVJ1ECES",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "messageType": "block",
+        "blocksUi": "={\n  \"text\": \"High-risk lead requires partner approval\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"\ud83d\udea8 High-Risk Lead \u2014 Action Required\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Lead ID:*\\n`{{ $json.leadId }}`\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Submitted:*\\n{{ $json.submittedAt }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Name:*\\n{{ $json.fullName }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Email:*\\n{{ $json.email }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Nationality:*\\n{{ $json.nationality }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Investment:*\\n${{ $json.investmentAmount.toLocaleString() }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Previous Denials:*\\n{{ $json.previousDenials }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Visa Type:*\\n{{ $json.visaType }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Target Country:*\\n{{ $json.targetCountry }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Risk Flags:*\\n{{ $json.riskReasons }}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Notes:*\\n{{ $json.notes || '_No notes provided._' }}\"\n      }\n    },\n    {\n      \"type\": \"divider\"\n    },\n    {\n      \"type\": \"actions\",\n      \"elements\": [\n        {\n          \"type\": \"button\",\n          \"text\": { \"type\": \"plain_text\", \"text\": \"\u2705 APPROVE\", \"emoji\": true },\n          \"style\": \"primary\",\n          \"url\": \"{{ $execution.resumeUrl + '?decision=approved&leadId=' + $json.leadId }}\"\n        },\n        {\n          \"type\": \"button\",\n          \"text\": { \"type\": \"plain_text\", \"text\": \"\u274c REJECT\", \"emoji\": true },\n          \"style\": \"danger\",\n          \"url\": \"{{ $execution.resumeUrl + '?decision=rejected&leadId=' + $json.leadId }}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"context\",\n      \"elements\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"\u23f3 Workflow paused. Clicking a button records your decision and resumes the workflow. | NomadCounsel Automated Intake\"\n        }\n      ]\n    }\n  ]\n}",
+        "otherOptions": {}
+      },
+      "id": "e7d4f286-c2a3-43d7-b236-b9c16bf4c759",
+      "name": "Slack \u2014 Partner Approval Request",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        10336,
+        7856
+      ],
+      "notesInFlow": true,
+      "notes": "Sends Block Kit message to #partner-approvals. Approve/Reject button URLs embed the n8n resume token + leadId as query params. Clicking a button resumes the Wait node."
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "options": {
+          "webhookSuffix": "partner-decision"
+        }
+      },
+      "id": "bb92c2b8-93b1-4501-ae73-8a93724d2f83",
+      "name": "Wait \u2014 Await Partner Decision",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        10544,
+        7856
+      ],
+      "notes": "Execution pauses here indefinitely until a partner clicks Approve or Reject in Slack.\nWhen resumed, $json = { query: { decision, leadId }, body: {}, headers: {} }.\nOriginal lead data is recovered downstream via $('Set \u2014 Tag as High Risk').item.json."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ (function() {\n  var leadData = $('Set \u2014 Tag as High Risk').item.json;\n  var raw = ($json.query && $json.query.decision) ? $json.query.decision : ($json.body && $json.body.decision) ? $json.body.decision : '';\n  var decision = String(raw).toLowerCase().trim();\n  return Object.assign({}, leadData, {\n    \"partnerDecision\": decision || 'unknown',\n    \"decidedAt\": $now.toISO()\n  });\n})() }}",
+        "options": {}
+      },
+      "id": "6abf0899-a32c-46be-b7df-66070e204081",
+      "name": "Set \u2014 Extract Partner Decision",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        10768,
+        7856
+      ],
+      "notes": "KEY NODE: After Wait resumes, $json only has the resume webhook payload (query/body/headers).\nThis node recovers the full original lead record from $('Set \u2014 Tag as High Risk').item.json\nand merges it with the partner decision + timestamp.\nAll downstream nodes receive the complete lead object again."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-approved",
+              "leftValue": "={{ $json.partnerDecision }}",
+              "rightValue": "approved",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "131c3b72-77a4-41f1-9d18-678bec11d71c",
+      "name": "IF \u2014 Partner Decision",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        10992,
+        7856
+      ],
+      "notes": "Checks normalized partnerDecision field (lowercased + trimmed by Extract node).\ntypeValidation: loose + caseSensitive: false so 'Approved', 'APPROVED', ' approved ' all pass.\nTRUE  (approved) \u2192 Master Leads path\nFALSE (rejected / unknown) \u2192 Rejection Email path"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ Object.assign({}, $json, {\n  \"status\": \"Approved \u2014 In Progress\",\n  \"approvedAt\": $now.toISO(),\n  \"approvedBy\": \"Senior Partner (via Slack)\",\n  \"assignedQueue\": \"Master Leads \u2014 High Priority\"\n}) }}",
+        "options": {}
+      },
+      "id": "185d8c5d-1be7-497f-9960-15a32036165a",
+      "name": "Set \u2014 Format Master Leads Record",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        11216,
+        7776
+      ],
+      "notes": "Merges approval metadata onto the full lead record before writing to Master Leads sheet."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1769370600,
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource",
+          "cachedResultUrl": "https://example.com/resource"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Lead ID": "={{ $json.leadId }}",
+            "Submitted At": "={{ $json.submittedAt }}",
+            "Full Name": "={{ $json.fullName }}",
+            "Email": "={{ $json.email }}",
+            "Phone": "={{ $json.phone }}",
+            "Nationality": "={{ $json.nationality }}",
+            "Investment Amount": "={{ $json.investmentAmount }}",
+            "Previous Denials": "={{ $json.previousDenials }}",
+            "Visa Type": "={{ $json.visaType }}",
+            "Target Country": "={{ $json.targetCountry }}",
+            "Risk Level": "={{ $json.riskLevel }}",
+            "Risk Reasons": "={{ $json.riskReasons }}",
+            "Status": "={{ $json.status }}",
+            "Approved At": "={{ $json.approvedAt }}",
+            "Approved By": "={{ $json.approvedBy }}",
+            "Assigned Queue": "={{ $json.assignedQueue }}",
+            "Notes": "={{ $json.notes }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Lead ID",
+              "displayName": "Lead ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Submitted At",
+              "displayName": "Submitted At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Full Name",
+              "displayName": "Full Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nationality",
+              "displayName": "Nationality",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Investment Amount",
+              "displayName": "Investment Amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Previous Denials",
+              "displayName": "Previous Denials",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Visa Type",
+              "displayName": "Visa Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Target Country",
+              "displayName": "Target Country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Risk Level",
+              "displayName": "Risk Level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Risk Reasons",
+              "displayName": "Risk Reasons",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Approved At",
+              "displayName": "Approved At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Approved By",
+              "displayName": "Approved By",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Assigned Queue",
+              "displayName": "Assigned Queue",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "fc8b0e37-524d-4ed9-8d48-a255eadf89eb",
+      "name": "Google Sheets \u2014 Append Master Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        11424,
+        7776
+      ],
+      "notes": "Appends the approved High Risk lead to the Master Leads tab. All 17 columns mapped dynamically from $json."
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ARVJ1ECES",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "messageType": "block",
+        "blocksUi": "={\n  \"text\": \"Lead approval update\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"\u2705 Lead Approved\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Lead ID:*\\n {{ $json['Lead ID'] }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Name:*\\n{{ $json['Full Name'] }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Email:*\\n{{ $json.Email }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Phone:*\\n{{ $json.Phone }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Nationality:*\\n{{ $json.Nationality }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Investment:*\\n${{ $json['Investment Amount'] }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Visa Type:*\\n\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Target Country:*\\n{{ $json['Target Country'] }}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Risk Level:*\\n{{ $json['Risk Level'] }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Status:*\\n{{ $json.Status }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Approved By:*\\n{{ $json['Approved By'] }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Approved At:*\\n{{ $json['Approved At'] }}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Risk Reasons:*\\n{{ $json['Risk Reasons'] }}\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Notes:*\\n{{ $json.Notes }}\"\n      }\n    }\n  ]\n}",
+        "otherOptions": {}
+      },
+      "id": "6d2f3aa3-15a1-4ccc-89bd-f765c65c536d",
+      "name": "Slack \u2014 Notify Approval Logged",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        11648,
+        7776
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ Object.assign({}, $json, {\n  \"status\": \"Rejected by Partner\",\n  \"rejectedAt\": $now.toISO(),\n  \"rejectedBy\": \"Senior Partner (via Slack)\"\n}) }}",
+        "options": {}
+      },
+      "id": "9de1640f-c3e9-4041-8612-d37e6c52e5e3",
+      "name": "Set \u2014 Format Rejection Record",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        11216,
+        7952
+      ],
+      "notes": "Merges rejection metadata onto the full lead record before sending email and logging."
+    },
+    {
+      "parameters": {
+        "fromEmail": "portfolio@example.com",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ 'Your NomadCounsel Application \u2014 Update (Ref: ' + $json.leadId + ')' }}",
+        "options": {}
+      },
+      "id": "d727a72e-ea05-4e16-a006-0f5261425657",
+      "name": "Email \u2014 Professional Rejection to Lead",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        11424,
+        7952
+      ],
+      "notes": "HTML rejection email to the applicant. Subject and body are fully dynamic via $json fields. Does NOT disclose specific risk flags \u2014 references only the application ref and review outcome."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 529403666,
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource",
+          "cachedResultUrl": "https://example.com/resource"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Lead ID": "={{ $('Set \u2014 Format Rejection Record').item.json.leadId }}",
+            "Submitted At": "={{ $('Set \u2014 Format Rejection Record').item.json.submittedAt }}",
+            "Full Name": "={{ $('Set \u2014 Format Rejection Record').item.json.fullName }}",
+            "Email": "={{ $('Set \u2014 Format Rejection Record').item.json.email }}",
+            "Nationality": "={{ $('Set \u2014 Format Rejection Record').item.json.nationality }}",
+            "Investment Amount": "={{ $('Set \u2014 Format Rejection Record').item.json.investmentAmount }}",
+            "Risk Reasons": "={{ $('Set \u2014 Format Rejection Record').item.json.riskReasons }}",
+            "Status": "={{ $('Set \u2014 Format Rejection Record').item.json.status }}",
+            "Rejected At": "={{ $('Set \u2014 Format Rejection Record').item.json.rejectedAt }}",
+            "Rejected By": "={{ $('Set \u2014 Format Rejection Record').item.json.rejectedBy }}",
+            "Rejection Email Sent": "={{ $('Set \u2014 Format Rejection Record').item.json.email }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Lead ID",
+              "displayName": "Lead ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Submitted At",
+              "displayName": "Submitted At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Full Name",
+              "displayName": "Full Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nationality",
+              "displayName": "Nationality",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Investment Amount",
+              "displayName": "Investment Amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Risk Reasons",
+              "displayName": "Risk Reasons",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Rejected At",
+              "displayName": "Rejected At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Rejected By",
+              "displayName": "Rejected By",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Rejection Email Sent",
+              "displayName": "Rejection Email Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "39597522-317f-4a1c-bb3e-33852123e6b1",
+      "name": "Google Sheets \u2014 Log Rejection",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        11648,
+        7952
+      ],
+      "notes": "Logs all partner-rejected leads for compliance audit trail. All columns mapped dynamically."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ Object.assign({}, $json, {\n  \"riskLevel\": \"Standard\",\n  \"riskReasons\": \"No high-risk flags detected\",\n  \"status\": \"In Paralegal Queue\",\n  \"assignedQueue\": \"Paralegal Queue\",\n  \"routedAt\": $now.toISO()\n}) }}",
+        "options": {}
+      },
+      "id": "fff10ef1-83ee-4259-8824-b1d30ec61017",
+      "name": "Set \u2014 Tag as Standard Risk",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        10112,
+        8096
+      ],
+      "notes": "Spreads all normalized lead fields, tags as Standard, and adds routing metadata. No partner approval required."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1847281649,
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource",
+          "cachedResultUrl": "https://example.com/resource"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Lead ID": "={{ $json.leadId }}",
+            "Submitted At": "={{ $json.submittedAt }}",
+            "Full Name": "={{ $json.fullName }}",
+            "Email": "={{ $json.email }}",
+            "Phone": "={{ $json.phone }}",
+            "Nationality": "={{ $json.nationality }}",
+            "Investment Amount": "={{ $json.investmentAmount }}",
+            "Previous Denials": "={{ $json.previousDenials }}",
+            "Visa Type": "={{ $json.visaType }}",
+            "Target Country": "={{ $json.targetCountry }}",
+            "Risk Level": "={{ $json.riskLevel }}",
+            "Status": "={{ $json.status }}",
+            "Assigned Queue": "={{ $json.assignedQueue }}",
+            "Routed At": "={{ $json.routedAt }}",
+            "Notes": "={{ $json.notes }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Lead ID",
+              "displayName": "Lead ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Submitted At",
+              "displayName": "Submitted At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Full Name",
+              "displayName": "Full Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nationality",
+              "displayName": "Nationality",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Investment Amount",
+              "displayName": "Investment Amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Previous Denials",
+              "displayName": "Previous Denials",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Visa Type",
+              "displayName": "Visa Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Target Country",
+              "displayName": "Target Country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Risk Level",
+              "displayName": "Risk Level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Assigned Queue",
+              "displayName": "Assigned Queue",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Routed At",
+              "displayName": "Routed At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Assigned Paralegal",
+              "displayName": "Assigned Paralegal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Priority",
+              "displayName": "Priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "f402f208-d1f4-4069-94d0-6a79d2a78fbd",
+      "name": "Google Sheets \u2014 Append Paralegal Queue",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        10336,
+        8096
+      ],
+      "notes": "Appends Standard leads to the Paralegal Queue sheet. All 15 columns mapped dynamically from $json."
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ARVJ1ECES",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "messageType": "block",
+        "blocksUi": {
+          "blocksValues": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "\ud83d\udfe2 *New Standard Lead Added to Queue*\n*={{ $json.fullName }}* (={{ $json.nationality }}) \u2014 ={{ $json.visaType }} \u2192 ={{ $json.targetCountry }}\n*Ref:* `={{ $json.leadId }}` | *Investment:* $={{ $json.investmentAmount.toLocaleString() }}\n\nCheck the <https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID Queue Sheet> for full details."
+              }
+            },
+            {
+              "type": "context",
+              "elements": [
+                {
+                  "type": "mrkdwn",
+                  "text": "Routed at ={{ $json.routedAt }} | Risk Level: Standard | NomadCounsel Automated Intake"
+                }
+              ]
+            }
+          ]
+        },
+        "otherOptions": {}
+      },
+      "id": "61fe28fb-eb54-4d8a-8747-c190fd97d2a1",
+      "name": "Slack \u2014 Notify Paralegal Team",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        10544,
+        8096
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "e3200e00-77ea-4189-a581-d8f014d62b1b",
+      "name": "Error Trigger \u2014 Catch All",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        8752,
+        8656
+      ],
+      "notes": "Fires automatically on any unhandled error in the workflow. $json contains workflow name, execution ID, last node executed, and error message."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ {\n  \"workflowName\": $json.workflow.name,\n  \"executionId\": $json.execution.id,\n  \"failedNode\": $json.execution.lastNodeExecuted,\n  \"errorMessage\": $json.error.message,\n  \"errorStack\": $json.error.stack || 'No stack trace available',\n  \"errorTime\": $now.toISO(),\n  \"executionMode\": $json.execution.mode\n} }}",
+        "options": {}
+      },
+      "id": "49e79794-ee16-4931-85ea-0d552c41d43b",
+      "name": "Set \u2014 Format Error Details",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        8976,
+        8656
+      ],
+      "notes": "Extracts error context from the error trigger payload into a clean flat object for Slack and email templates."
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "messageType": "block",
+        "blocksUi": {
+          "blocksValues": [
+            {
+              "type": "header",
+              "text": {
+                "type": "plain_text",
+                "text": "\u26a0\ufe0f WORKFLOW ERROR \u2014 Immediate Attention Required",
+                "emoji": true
+              }
+            },
+            {
+              "type": "section",
+              "fields": [
+                {
+                  "type": "mrkdwn",
+                  "text": "*Workflow:*\n={{ $json.workflowName }}"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "*Execution ID:*\n`={{ $json.executionId }}`"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "*Failed Node:*\n={{ $json.failedNode }}"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "*Error Time:*\n={{ $json.errorTime }}"
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*Error Message:*\n```={{ $json.errorMessage }}```"
+              }
+            },
+            {
+              "type": "context",
+              "elements": [
+                {
+                  "type": "mrkdwn",
+                  "text": "Mode: ={{ $json.executionMode }} | Check n8n execution logs for full stack trace."
+                }
+              ]
+            }
+          ]
+        },
+        "otherOptions": {}
+      },
+      "id": "a7518ef9-afc7-4e08-9103-db7a2020be97",
+      "name": "Slack \u2014 Admin Error Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        9184,
+        8656
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "portfolio@example.com",
+        "toEmail": "portfolio@example.com",
+        "subject": "={{ '[ACTION REQUIRED] Workflow Error \u2014 ' + $json.workflowName + ' (Exec: ' + $json.executionId + ')' }}",
+        "options": {}
+      },
+      "id": "3874d11d-85f1-47f6-ac5a-c39267ff5a99",
+      "name": "Email \u2014 Admin Error Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        9408,
+        8656
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### \ud83d\udd34 STAGE 2: HIGH RISK \u2014 PARTNER APPROVAL LOOP\nSlack Block Kit message \u2192 Wait (execution paused) \u2192 Resume via URL click\n\n**Critical:** After Wait resumes, $json contains ONLY the resume webhook\npayload (query/body/headers). Original lead data is recovered with:\n`$('Set \u2014 Tag as High Risk').item.json`\n\nApprove URL: `resumeUrl?decision=approved&leadId=...`\nReject URL:  `resumeUrl?decision=rejected&leadId=...`",
+        "height": 238,
+        "width": 500,
+        "color": 3
+      },
+      "id": "05224831-b328-4c89-921e-c123fe0c071a",
+      "name": "Sticky Note \u2014 High Risk Path1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        10176,
+        7568
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook \u2014 Intake Form": {
+      "main": [
+        [
+          {
+            "node": "Set \u2014 Normalize Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set \u2014 Normalize Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "IF \u2014 High Risk Triage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF \u2014 High Risk Triage": {
+      "main": [
+        [
+          {
+            "node": "Set \u2014 Tag as High Risk",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set \u2014 Tag as Standard Risk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set \u2014 Tag as High Risk": {
+      "main": [
+        [
+          {
+            "node": "Slack \u2014 Partner Approval Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack \u2014 Partner Approval Request": {
+      "main": [
+        [
+          {
+            "node": "Wait \u2014 Await Partner Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait \u2014 Await Partner Decision": {
+      "main": [
+        [
+          {
+            "node": "Set \u2014 Extract Partner Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set \u2014 Extract Partner Decision": {
+      "main": [
+        [
+          {
+            "node": "IF \u2014 Partner Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF \u2014 Partner Decision": {
+      "main": [
+        [
+          {
+            "node": "Set \u2014 Format Master Leads Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set \u2014 Format Rejection Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set \u2014 Format Master Leads Record": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets \u2014 Append Master Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets \u2014 Append Master Leads": {
+      "main": [
+        [
+          {
+            "node": "Slack \u2014 Notify Approval Logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set \u2014 Format Rejection Record": {
+      "main": [
+        [
+          {
+            "node": "Email \u2014 Professional Rejection to Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email \u2014 Professional Rejection to Lead": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets \u2014 Log Rejection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set \u2014 Tag as Standard Risk": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets \u2014 Append Paralegal Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets \u2014 Append Paralegal Queue": {
+      "main": [
+        [
+          {
+            "node": "Slack \u2014 Notify Paralegal Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger \u2014 Catch All": {
+      "main": [
+        [
+          {
+            "node": "Set \u2014 Format Error Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set \u2014 Format Error Details": {
+      "main": [
+        [
+          {
+            "node": "Slack \u2014 Admin Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack \u2014 Admin Error Alert": {
+      "main": [
+        [
+          {
+            "node": "Email \u2014 Admin Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-04-16T19:53:15.594Z",
+      "createdAt": "2026-04-16T19:53:15.594Z",
+      "id": "4v9CygClCNo6x2Zw",
+      "name": "legal-tech"
+    },
+    {
+      "updatedAt": "2026-04-16T19:53:15.596Z",
+      "createdAt": "2026-04-16T19:53:15.596Z",
+      "id": "77NJlp37yh2SFAjU",
+      "name": "human-in-loop"
+    },
+    {
+      "updatedAt": "2026-04-15T02:11:59.998Z",
+      "createdAt": "2026-04-15T02:11:59.998Z",
+      "id": "HbPT0R6YmmGpGHIX",
+      "name": "lead-intake"
+    }
+  ]
+}

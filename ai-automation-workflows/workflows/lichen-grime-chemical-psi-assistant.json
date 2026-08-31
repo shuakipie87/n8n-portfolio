@@ -1,0 +1,500 @@
+{
+  "name": "Lichen & Grime \u2014 Pressure Washing Chemical & PSI Assistant",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1887205641,
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource",
+          "cachedResultUrl": "https://example.com/resource"
+        },
+        "options": {}
+      },
+      "id": "2df49262-b490-4ea9-b7e2-573b28aecb56",
+      "name": "Google Sheets Trigger \u2014 Form Responses",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.map(item => {\n  const raw = item.json;\n\n  const surfaceMaterial = String(raw['Surface Material'] || raw.surface_material || raw.surface || '').trim();\n  const stainType = String(raw['Stain Type'] || raw.stain_type || raw.stain || '').trim();\n  const technicianEmail = String(raw['Technician Email'] || raw.technician_email || raw.email || '').trim().toLowerCase();\n  const technicianName = String(raw['Technician Name'] || raw.technician_name || raw.name || 'Field Technician').trim();\n  const siteLocation = String(raw['Site Location'] || raw.site_location || raw.location || 'Not specified').trim();\n  const surfaceAge = String(raw['Surface Age'] || raw.surface_age || 'Unknown').trim();\n  const submissionTimestamp = raw['Timestamp'] || new Date().toISOString();\n  const ticketId = raw['Ticket ID'] || `LG-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`;\n\n  const isEmailValid = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(technicianEmail);\n  const hasSurface = surfaceMaterial.length > 0;\n  const hasStain = stainType.length > 0;\n  const isValid = isEmailValid && hasSurface && hasStain;\n\n  const systemPrompt = `You are a senior pressure-washing technician and chemical safety expert at Lichen & Grime, a specialized exterior cleaning startup. Field technicians submit a surface + stain combination and you provide a precise, safe cleaning recommendation that prevents property damage and protects the worker.\n\nReturn ONLY valid JSON in this exact format:\n{\n  \"chemicalAgent\": \"<specific chemical name>\",\n  \"concentration\": \"<dilution ratio or percentage>\",\n  \"psiMin\": <number>,\n  \"psiMax\": <number>,\n  \"nozzleAngle\": \"<degrees, e.g. 25 or 40>\",\n  \"dwellTimeMinutes\": <number>,\n  \"ppeRequired\": [\"<list>\", \"<of>\", \"<items>\"],\n  \"surfaceCategory\": \"<one of: Soft Wash, Standard, Heavy Duty>\",\n  \"warnings\": [\"<critical safety warnings>\"],\n  \"procedureSteps\": [\"<step 1>\", \"<step 2>\", \"<step 3>\"]\n}\n\nSafety rules:\n- Wood (cedar, redwood, teak): SOFT WASH ONLY (\u2264500 PSI) with surfactant + low-pressure rinse\n- Painted/stained surfaces: \u22641500 PSI, 40\u00b0 nozzle\n- Limestone/sandstone/travertine: SOFT WASH (\u2264500 PSI) \u2014 acidic chemicals corrode\n- Concrete/pavers: 2500-3500 PSI OK with degreaser\n- Vinyl/aluminum siding: 1500-2000 PSI with 25\u00b0 nozzle\n- Composite deck: \u22641500 PSI, oxygen bleach (no chlorine)\n- Asphalt shingles: SOFT WASH ONLY \u2014 never high pressure\n\nChemical guidance:\n- Mold/algae/lichen: Sodium Hypochlorite 0.5-3% + surfactant\n- Oil/grease: Alkaline degreaser (pH 11-13)\n- Rust/iron staining: Oxalic Acid 5-10%\n- Efflorescence: Phosphoric or Muriatic Acid (DILUTED \u2014 wear PPE)\n- Hard water: Vinegar or CLR-type acid cleaner\n- UV-grayed wood: Oxalic Acid + Sodium Percarbonate brightener\n\nDwell time: 5-15 min typical. Never let chemicals dry on surface.\n\nPPE: Always include nitrile gloves + chemical splash goggles. Add face shield + apron for acids. Add respirator for confined spaces.\n\nWarnings: Always flag plant/landscaping protection, neighbor property risk, runoff containment, and cure-time before re-rinse.`;\n\n  const userMessage = `Surface Material: ${surfaceMaterial}\\nStain Type: ${stainType}\\nSurface Age: ${surfaceAge}\\nSite Location: ${siteLocation}\\n\\nProvide a complete safety-first cleaning recommendation as structured JSON.`;\n\n  return { json: {\n    ticketId,\n    submissionTimestamp,\n    technicianName,\n    technicianEmail,\n    surfaceMaterial,\n    stainType,\n    surfaceAge,\n    siteLocation,\n    isValid,\n    systemPrompt,\n    userMessage,\n    rawRow: raw\n  }};\n});"
+      },
+      "id": "7305f720-1180-4482-a6db-12ad24cd9d09",
+      "name": "Parse Form & Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.API_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://lichenandgrime.com"
+            },
+            {
+              "name": "X-Title",
+              "value": "Lichen & Grime PSI Assistant"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \"model\": \"openai/gpt-4o-mini\", \"messages\": [{\"role\": \"system\", \"content\": $json.systemPrompt}, {\"role\": \"user\", \"content\": $json.userMessage}], \"temperature\": 0.2, \"max_tokens\": 600 }) }}",
+        "options": {}
+      },
+      "id": "fbeeab8c-8932-4c6e-9b77-9f4d8668e67b",
+      "name": "OpenRouter \u2014 AI Safety Assistant",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.map(item => {\n  const aiRaw = item.json;\n  const responseContent = aiRaw.choices?.[0]?.message?.content || '';\n\n  let parsed = {\n    chemicalAgent: 'Unknown',\n    concentration: 'See manual',\n    psiMin: 500,\n    psiMax: 1500,\n    nozzleAngle: '40',\n    dwellTimeMinutes: 10,\n    ppeRequired: ['Nitrile gloves', 'Chemical splash goggles'],\n    surfaceCategory: 'Standard',\n    warnings: ['Verify chemical compatibility before application'],\n    procedureSteps: ['Test in inconspicuous area', 'Apply chemical', 'Rinse thoroughly']\n  };\n\n  try {\n    const cleaned = responseContent.trim()\n      .replace(/^```json?\\n?/, '')\n      .replace(/\\n?```$/, '')\n      .trim();\n    const aiOutput = JSON.parse(cleaned);\n    parsed = { ...parsed, ...aiOutput };\n  } catch (e) {\n    const chemMatch = responseContent.match(/\"chemicalAgent\"\\s*:\\s*\"([^\"]+)\"/);\n    if (chemMatch) parsed.chemicalAgent = chemMatch[1];\n    const concMatch = responseContent.match(/\"concentration\"\\s*:\\s*\"([^\"]+)\"/);\n    if (concMatch) parsed.concentration = concMatch[1];\n    const psiMinMatch = responseContent.match(/\"psiMin\"\\s*:\\s*(\\d+)/);\n    if (psiMinMatch) parsed.psiMin = parseInt(psiMinMatch[1]);\n    const psiMaxMatch = responseContent.match(/\"psiMax\"\\s*:\\s*(\\d+)/);\n    if (psiMaxMatch) parsed.psiMax = parseInt(psiMaxMatch[1]);\n  }\n\n  const psiRange = `${parsed.psiMin}-${parsed.psiMax} PSI`;\n  const ppeListText = (parsed.ppeRequired || []).map(p => '\u2022 ' + p).join('<br/>');\n  const warningsText = (parsed.warnings || []).map(w => '\u26a0\ufe0f ' + w).join('<br/>');\n  const stepsText = (parsed.procedureSteps || []).map((s, i) => (i+1) + '. ' + s).join('<br/>');\n\n  const categoryColor = parsed.surfaceCategory === 'Soft Wash' ? 3066993\n    : parsed.surfaceCategory === 'Heavy Duty' ? 15158332\n    : 16776960;\n\n  const prevData = $('Parse Form & Build AI Prompt').item.json;\n\n  return { json: {\n    ...prevData,\n    chemicalAgent: parsed.chemicalAgent,\n    concentration: parsed.concentration,\n    psiMin: parsed.psiMin,\n    psiMax: parsed.psiMax,\n    psiRange,\n    nozzleAngle: parsed.nozzleAngle,\n    dwellTimeMinutes: parsed.dwellTimeMinutes,\n    ppeRequired: parsed.ppeRequired,\n    ppeListText,\n    surfaceCategory: parsed.surfaceCategory,\n    categoryColor,\n    warnings: parsed.warnings,\n    warningsText,\n    procedureSteps: parsed.procedureSteps,\n    stepsText,\n    aiRawResponse: responseContent,\n    processedAt: new Date().toISOString()\n  }};\n});"
+      },
+      "id": "8136d7b2-a24e-4eb1-af23-696289e51b83",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.technicianEmail }}",
+        "subject": "=Lichen & Grime \u2014 Field Recommendation: {{ $json.surfaceMaterial }} ({{ $json.ticketId }})",
+        "message": "=<div style='font-family:Arial,sans-serif;color:#1a3a5c;max-width:680px;background:#f0f5f3;padding:24px;'><div style='background:#1e3a2c;padding:24px;border-bottom:4px solid #84c441;'><h2 style='color:#fafaf5;margin:0;letter-spacing:2px;text-transform:uppercase;'>LICHEN & GRIME</h2><p style='color:#a8d172;margin:6px 0 0 0;font-style:italic;'>Field Safety Assistant \u2022 Recommendation</p></div><div style='background:white;padding:24px;'><h3 style='color:#1e3a2c;margin-top:0;'>\ud83e\uddea Cleaning Recommendation Ready</h3><p>Hi {{ $json.technicianName }},</p><p>Here is your AI-generated safe cleaning recommendation for the assessment you submitted:</p><table style='border-collapse:collapse;width:100%;margin:16px 0;background:#fafaf5;'><tr><td style='padding:10px;border-bottom:1px solid #e0e0e0;background:#1e3a2c;color:#fafaf5;font-weight:bold;letter-spacing:1px;text-transform:uppercase;font-size:11px;' colspan='2'>SURFACE ASSESSMENT</td></tr><tr><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;width:35%;'><strong>Surface Material</strong></td><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'>{{ $json.surfaceMaterial }}</td></tr><tr><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'><strong>Stain Type</strong></td><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'>{{ $json.stainType }}</td></tr><tr><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'><strong>Surface Age</strong></td><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'>{{ $json.surfaceAge }}</td></tr><tr><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'><strong>Site Location</strong></td><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'>{{ $json.siteLocation }}</td></tr><tr><td style='padding:10px;border-bottom:1px solid #e0e0e0;background:#84c441;color:#1e3a2c;font-weight:bold;letter-spacing:1px;text-transform:uppercase;font-size:11px;' colspan='2'>RECOMMENDED CHEMICAL</td></tr><tr><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'><strong>Cleaning Agent</strong></td><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;color:#1e3a2c;font-weight:bold;'>{{ $json.chemicalAgent }}</td></tr><tr><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'><strong>Concentration</strong></td><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'>{{ $json.concentration }}</td></tr><tr><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'><strong>Dwell Time</strong></td><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'>{{ $json.dwellTimeMinutes }} minutes</td></tr><tr><td style='padding:10px;border-bottom:1px solid #e0e0e0;background:#84c441;color:#1e3a2c;font-weight:bold;letter-spacing:1px;text-transform:uppercase;font-size:11px;' colspan='2'>EQUIPMENT SETTINGS</td></tr><tr><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'><strong>Wash Category</strong></td><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;font-weight:bold;'>{{ $json.surfaceCategory }}</td></tr><tr><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'><strong>Safe PSI Range</strong></td><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;color:#b35400;font-weight:bold;font-size:16px;'>{{ $json.psiRange }}</td></tr><tr><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'><strong>Nozzle Angle</strong></td><td style='padding:8px 12px;border-bottom:1px solid #e0e0e0;'>{{ $json.nozzleAngle }}\u00b0</td></tr><tr><td style='padding:10px;border-bottom:1px solid #e0e0e0;background:#84c441;color:#1e3a2c;font-weight:bold;letter-spacing:1px;text-transform:uppercase;font-size:11px;' colspan='2'>REQUIRED PPE</td></tr><tr><td style='padding:12px;border-bottom:1px solid #e0e0e0;' colspan='2'>{{ $json.ppeListText }}</td></tr><tr><td style='padding:10px;border-bottom:1px solid #e0e0e0;background:#b35400;color:white;font-weight:bold;letter-spacing:1px;text-transform:uppercase;font-size:11px;' colspan='2'>SAFETY WARNINGS</td></tr><tr><td style='padding:12px;border-bottom:1px solid #e0e0e0;color:#7d2810;' colspan='2'>{{ $json.warningsText }}</td></tr><tr><td style='padding:10px;border-bottom:1px solid #e0e0e0;background:#1e3a2c;color:#fafaf5;font-weight:bold;letter-spacing:1px;text-transform:uppercase;font-size:11px;' colspan='2'>PROCEDURE STEPS</td></tr><tr><td style='padding:12px;' colspan='2'>{{ $json.stepsText }}</td></tr></table><p style='background:#fff8e1;padding:12px;border-left:4px solid #f9a825;font-size:13px;'><strong>\u26a0\ufe0f Reminder:</strong> Always test the chemical in an inconspicuous spot first. Protect plants with plastic sheeting and pre-wet surrounding landscaping. If unsure, call dispatch before proceeding.</p><p style='color:#666;font-size:12px;margin-top:32px;border-top:1px solid #e0e0e0;padding-top:16px;'>Lichen &amp; Grime \u2022 Specialized Exterior Cleaning<br/>Ticket: {{ $json.ticketId }} \u2022 Generated: {{ $json.processedAt }}</p></div></div>",
+        "options": {}
+      },
+      "id": "b26be07f-3123-4ee7-a223-22b647d29102",
+      "name": "Gmail \u2014 Field Recommendation",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1793531107,
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource",
+          "cachedResultUrl": "https://example.com/resource"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Ticket ID": "={{ $('Parse AI Response').item.json.ticketId }}",
+            "Submission Timestamp": "={{ $('Parse AI Response').item.json.submissionTimestamp }}",
+            "Technician Name": "={{ $('Parse AI Response').item.json.technicianName }}",
+            "Technician Email": "={{ $('Parse AI Response').item.json.technicianEmail }}",
+            "Surface Material": "={{ $('Parse AI Response').item.json.surfaceMaterial }}",
+            "Stain Type": "={{ $('Parse AI Response').item.json.stainType }}",
+            "Surface Age": "={{ $('Parse AI Response').item.json.surfaceAge }}",
+            "Site Location": "={{ $('Parse AI Response').item.json.siteLocation }}",
+            "Chemical Agent": "={{ $('Parse AI Response').item.json.chemicalAgent }}",
+            "Concentration": "={{ $('Parse AI Response').item.json.concentration }}",
+            "PSI Min": "={{ $('Parse AI Response').item.json.psiMin }}",
+            "PSI Max": "={{ $('Parse AI Response').item.json.psiMax }}",
+            "Nozzle Angle": "={{ $('Parse AI Response').item.json.nozzleAngle }}",
+            "Dwell Time (min)": "={{ $('Parse AI Response').item.json.dwellTimeMinutes }}",
+            "Surface Category": "={{ $('Parse AI Response').item.json.surfaceCategory }}",
+            "PPE Required": "={{ ($json.ppeRequired || []).join('; ') }}",
+            "Warnings": "={{ ($json.warnings || []).join('; ') }}",
+            "Processed At": "={{ $('Parse AI Response').item.json.processedAt }}",
+            "Email Sent": "TRUE"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Ticket ID",
+              "displayName": "Ticket ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Submission Timestamp",
+              "displayName": "Submission Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Technician Name",
+              "displayName": "Technician Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Technician Email",
+              "displayName": "Technician Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Surface Material",
+              "displayName": "Surface Material",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Stain Type",
+              "displayName": "Stain Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Surface Age",
+              "displayName": "Surface Age",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Site Location",
+              "displayName": "Site Location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Chemical Agent",
+              "displayName": "Chemical Agent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Concentration",
+              "displayName": "Concentration",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "PSI Min",
+              "displayName": "PSI Min",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "PSI Max",
+              "displayName": "PSI Max",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nozzle Angle",
+              "displayName": "Nozzle Angle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Dwell Time (min)",
+              "displayName": "Dwell Time (min)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Surface Category",
+              "displayName": "Surface Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "PPE Required",
+              "displayName": "PPE Required",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Warnings",
+              "displayName": "Warnings",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Processed At",
+              "displayName": "Processed At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email Sent",
+              "displayName": "Email Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "f166baa7-778b-4bea-a92f-8affbeebd792",
+      "name": "Sheets \u2014 Recommendations Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const d = $('Parse AI Response').item.json; return JSON.stringify({ \"username\": \"Lichen & Grime Field Bot\", \"embeds\": [{ \"title\": \"\ud83e\uddea Recommendation Sent \u2014 \" + (d.surfaceCategory || 'Standard'), \"description\": '*' + (d.surfaceMaterial || 'Unknown') + ' / ' + (d.stainType || 'Unknown') + '*', \"color\": Number(d.categoryColor) || 16776960, \"fields\": [ { \"name\": \"\ud83c\udfab Ticket\", \"value\": String(d.ticketId || 'N/A'), \"inline\": true }, { \"name\": \"\ud83d\udc77 Technician\", \"value\": String(d.technicianName || 'Unknown'), \"inline\": true }, { \"name\": \"\ud83c\udff7\ufe0f Category\", \"value\": String(d.surfaceCategory || 'Standard'), \"inline\": true }, { \"name\": \"\ud83e\uddf4 Chemical\", \"value\": String(d.chemicalAgent || 'Unknown') + ' (' + String(d.concentration || 'n/a') + ')', \"inline\": false }, { \"name\": \"\ud83d\udca8 PSI Range\", \"value\": String(d.psiRange || 'n/a') + ' \u2022 ' + String(d.nozzleAngle || '40') + '\u00b0 nozzle', \"inline\": true }, { \"name\": \"\u23f1\ufe0f Dwell\", \"value\": String(d.dwellTimeMinutes || 0) + ' min', \"inline\": true }, { \"name\": \"\ud83d\udccd Site\", \"value\": String(d.siteLocation || 'Not specified'), \"inline\": true } ], \"footer\": { \"text\": \"Lichen & Grime \u2014 Field Safety Assistant\" }, \"timestamp\": d.processedAt || new Date().toISOString() }] }); })() }}\n",
+        "options": {}
+      },
+      "id": "8c30ec97-be27-40d8-98f2-7ad684e58e72",
+      "name": "Discord \u2014 Audit Channel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1344,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "a598948b-e16e-41af-9c76-0f39d18f0524",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.map(item => {\n  const err = item.json;\n  const now = new Date().toISOString();\n  const errorId = `ERR-${now.slice(0,10).replace(/-/g,'')}-${Math.floor(Math.random()*9000)+1000}`;\n  return { json: {\n    errorId,\n    timestamp: now,\n    ticketId: err.ticketId || 'UNKNOWN',\n    technicianEmail: err.technicianEmail || 'unknown',\n    surfaceMaterial: err.surfaceMaterial || 'unknown',\n    failedNode: err.node?.name || err.execution?.lastNodeExecuted || 'Unknown Node',\n    errorType: err.name || 'WorkflowError',\n    errorMessage: err.message || 'No message available',\n    workflowName: 'Lichen & Grime \u2014 PSI Assistant'\n  }};\n});"
+      },
+      "id": "31b5a373-4881-4fd9-a96d-42133cfea657",
+      "name": "Format Error Details",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "specifyBody": "string",
+        "body": "={{ JSON.stringify({ \"username\": \"Lichen & Grime Admin Bot\", \"content\": \"<@here> Field assistant workflow error\", \"embeds\": [{ \"title\": \"\ud83d\udea8 CRITICAL \u2014 PSI Assistant Failure\", \"color\": 15158332, \"fields\": [ { \"name\": \"Error ID\", \"value\": $json.errorId, \"inline\": true }, { \"name\": \"Failed Node\", \"value\": $json.failedNode, \"inline\": true }, { \"name\": \"Ticket\", \"value\": $json.ticketId, \"inline\": true }, { \"name\": \"Technician Email\", \"value\": $json.technicianEmail, \"inline\": false }, { \"name\": \"Surface\", \"value\": $json.surfaceMaterial, \"inline\": false }, { \"name\": \"Error Type\", \"value\": $json.errorType, \"inline\": false }, { \"name\": \"Message\", \"value\": $json.errorMessage, \"inline\": false } ], \"timestamp\": $json.timestamp, \"footer\": { \"text\": \"Lichen & Grime \u2014 Error Recovery\" } }] }) }}",
+        "options": {}
+      },
+      "id": "ff31ecc5-0ce8-4b56-a848-3e88123c26a3",
+      "name": "Discord \u2014 Admin Critical Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        448,
+        224
+      ]
+    }
+  ],
+  "connections": {
+    "Google Sheets Trigger \u2014 Form Responses": {
+      "main": [
+        [
+          {
+            "node": "Parse Form & Build AI Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Form & Build AI Prompt": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter \u2014 AI Safety Assistant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter \u2014 AI Safety Assistant": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Gmail \u2014 Field Recommendation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail \u2014 Field Recommendation": {
+      "main": [
+        [
+          {
+            "node": "Sheets \u2014 Recommendations Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets \u2014 Recommendations Log": {
+      "main": [
+        [
+          {
+            "node": "Discord \u2014 Audit Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Details": {
+      "main": [
+        [
+          {
+            "node": "Discord \u2014 Admin Critical Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": []
+}

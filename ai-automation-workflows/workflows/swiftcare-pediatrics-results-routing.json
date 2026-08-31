@@ -1,0 +1,191 @@
+{
+  "name": "SwiftCare Pediatrics Workflow json",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-result-status-normal",
+              "leftValue": "={{ $json[\"Result Status\"] }}",
+              "rightValue": "Normal",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f6fa2b85-fd01-493b-be10-f2cbeb26a857",
+      "name": "IF \u2014 Result Status Normal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        112,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json[\"Parent Email\"] }}",
+        "subject": "Lab Results Available \u2014 SwiftCare Pediatrics",
+        "message": "=<p>Dear Parent/Guardian of <strong>{{ $json[\"Patient Name\"] }}</strong>,</p>\n<p>We are pleased to let you know that the <strong>{{ $json[\"Lab Type\"] }}</strong> results for your child are now available and have come back as <strong>Normal</strong>.</p>\n<p>If you have any questions or would like to discuss these results with your care team, please do not hesitate to contact our office or log in to your patient portal.</p>\n<p>Thank you for trusting SwiftCare Pediatrics with your child's health.</p>\n<br/>\n<p>Warm regards,<br/><strong>SwiftCare Pediatrics Care Team</strong></p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "edc963c3-314e-4b83-8083-ce1add297eec",
+      "name": "Gmail \u2014 Notify Parent",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        336,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ATNA34E9Y",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "text": "=\u2705 *Lab Result Notification Sent*\nThe parent of *{{ $('Google Sheets Trigger1').item.json['Patient Name'] }}* has been notified of their *{{ $('Google Sheets Trigger1').item.json['Lab Type'] }}* results (Normal).\n\ud83d\udccb Log ID:  {{ $('Google Sheets Trigger1').item.json['Log ID'] }}| \ud83d\udcc5 Date Logged: {{ $('Google Sheets Trigger1').item.json['Date Logged'] }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "id": "fc913b69-80f9-4eba-afcf-72a939b4b18c",
+      "name": "Slack \u2014 Notify Nursing Team",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        560,
+        320
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c9a26a03-bcac-4ef9-9a5c-78321d461e2e",
+      "name": "Abnormal/Pending \u2014 No Auto-Notify",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        336,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource",
+          "cachedResultUrl": "https://example.com/resource"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 406154001,
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource",
+          "cachedResultUrl": "https://example.com/resource"
+        },
+        "options": {}
+      },
+      "id": "5d3a1d08-5dd8-48de-8f64-1bcef3a06aee",
+      "name": "Google Sheets Trigger1",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -112,
+        416
+      ]
+    }
+  ],
+  "connections": {
+    "IF \u2014 Result Status Normal?": {
+      "main": [
+        [
+          {
+            "node": "Gmail \u2014 Notify Parent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Abnormal/Pending \u2014 No Auto-Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail \u2014 Notify Parent": {
+      "main": [
+        [
+          {
+            "node": "Slack \u2014 Notify Nursing Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Trigger1": {
+      "main": [
+        [
+          {
+            "node": "IF \u2014 Result Status Normal?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-04-09T07:40:51.677Z",
+      "createdAt": "2026-04-09T07:40:51.677Z",
+      "id": "1PW3tEXPJBqnuJ54",
+      "name": "production"
+    },
+    {
+      "updatedAt": "2026-05-02T13:04:27.740Z",
+      "createdAt": "2026-05-02T13:04:27.740Z",
+      "id": "VJeqlhvmBXYlxfFg",
+      "name": "lab-notifications"
+    },
+    {
+      "updatedAt": "2026-05-02T13:04:27.736Z",
+      "createdAt": "2026-05-02T13:04:27.736Z",
+      "id": "kHzcGcjzKHc2tBRu",
+      "name": "SwiftCare Pediatrics"
+    }
+  ]
+}

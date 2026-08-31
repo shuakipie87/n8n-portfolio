@@ -1,0 +1,566 @@
+{
+  "name": "Steeped & Seeded \u2014 Monthly Tasting Box (ENV)",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_NAME }}",
+          "mode": "list"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "id": "cb3ee669-af36-4b1c-9844-16f65445c4d5",
+      "name": "New Subscriber Row",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1456,
+        208
+      ],
+      "notes": "documentId and sheetName driven by env vars."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Pass through every CSV field unchanged and add normalized fields.\nconst row = $input.item.json;\n\nconst rawName = (row.Customer_Name || '').toString();\nconst rawType = (row.Subscription_Type || '').toString();\nconst rawNotes = (row.Dietary_Notes || '').toString();\nconst rawDate = (row.Signup_Date || '').toString();\n\nfunction titleCase(s) {\n  return s\n    .toLowerCase()\n    .split(/\\s+/)\n    .filter(Boolean)\n    .map(w => w.charAt(0).toUpperCase() + w.slice(1))\n    .join(' ');\n}\n\nfunction ordinal(n) {\n  const v = n % 100;\n  if (v >= 11 && v <= 13) return n + 'th';\n  switch (n % 10) {\n    case 1: return n + 'st';\n    case 2: return n + 'nd';\n    case 3: return n + 'rd';\n    default: return n + 'th';\n  }\n}\n\nfunction humanDate(iso) {\n  if (!iso) return '';\n  const m = iso.match(/^(\\d{4})-(\\d{2})-(\\d{2})/);\n  if (!m) return iso;\n  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];\n  const monthIdx = parseInt(m[2], 10) - 1;\n  const day = parseInt(m[3], 10);\n  if (monthIdx < 0 || monthIdx > 11) return iso;\n  return months[monthIdx] + ' ' + ordinal(day);\n}\n\nconst Subscription_Type_Clean = rawType.trim();\nconst Customer_Name_Display = titleCase(rawName.trim());\nconst Signup_Date_Display = humanDate(rawDate.trim());\nconst notesTrimmed = rawNotes.trim();\nconst Has_Dietary_Notes = notesTrimmed.length > 0 && notesTrimmed.toLowerCase() !== 'none';\n\nlet Channel_Targets = [];\nif (Subscription_Type_Clean === 'Specialty Tea') Channel_Targets = ['tea-fulfillment'];\nelse if (Subscription_Type_Clean === 'Cold-Pressed Juice') Channel_Targets = ['juice-prep'];\nelse if (Subscription_Type_Clean === 'Mixed Box') Channel_Targets = ['tea-fulfillment','juice-prep'];\nelse Channel_Targets = [];\n\nreturn {\n  json: {\n    Order_ID: row.Order_ID,\n    Customer_Name: row.Customer_Name,\n    Subscription_Type: row.Subscription_Type,\n    Dietary_Notes: row.Dietary_Notes,\n    Signup_Date: row.Signup_Date,\n    Customer_Email: row.Customer_Email,\n    Customer_Name_Display,\n    Signup_Date_Display,\n    Subscription_Type_Clean,\n    Has_Dietary_Notes,\n    Channel_Targets\n  }\n};"
+      },
+      "id": "6c2a2f30-caf1-4f15-9d12-263fc4f1901f",
+      "name": "Normalize Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1216,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-missing-type",
+              "leftValue": "={{ $json.Subscription_Type_Clean }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "fcce3461-9bf0-4a21-b37b-d44323620680",
+      "name": "Has Subscription Type?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -976,
+        208
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "9555f855-22df-4ca1-8dc5-bccd02c4b6c4",
+      "name": "Skipped: Missing Subscription Type",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -736,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "rule-tea",
+                    "leftValue": "={{ $json.Subscription_Type_Clean }}",
+                    "rightValue": "Specialty Tea",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Specialty Tea"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "rule-juice",
+                    "leftValue": "={{ $json.Subscription_Type_Clean }}",
+                    "rightValue": "Cold-Pressed Juice",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Cold-Pressed Juice"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "rule-mixed",
+                    "leftValue": "={{ $json.Subscription_Type_Clean }}",
+                    "rightValue": "Mixed Box",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Mixed Box"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4bc83c11-7a5c-414d-b645-60fe13155de5",
+      "name": "Route by Subscription Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -736,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.API_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://steepedandseeded.local"
+            },
+            {
+              "name": "X-Title",
+              "value": "Steeped & Seeded Tasting Box"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"meta-llama/llama-3.1-8b-instruct:free\",\n  \"temperature\": 0.4,\n  \"max_tokens\": 90,\n  \"messages\": [\n    { \"role\": \"system\", \"content\": \"You write one short prep note (max 25 words, single sentence) for kitchen staff at a juice bar and tea house. Mention dietary notes if any. No emojis. No greetings.\" },\n    { \"role\": \"user\", \"content\": \"Customer: {{ $json.Customer_Name_Display }}\\nSubscription: {{ $json.Subscription_Type_Clean }}\\nDietary Notes: {{ $json.Has_Dietary_Notes ? $json.Dietary_Notes : 'None' }}\\nWrite the prep note now.\" }\n  ]\n}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "73ea95a7-25dd-4b01-bda7-80f9b746f3e0",
+      "name": "OpenRouter Prep Note (Tea)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -496,
+        112
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.API_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://steepedandseeded.local"
+            },
+            {
+              "name": "X-Title",
+              "value": "Steeped & Seeded Tasting Box"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"meta-llama/llama-3.1-8b-instruct:free\",\n  \"temperature\": 0.4,\n  \"max_tokens\": 90,\n  \"messages\": [\n    { \"role\": \"system\", \"content\": \"You write one short prep note (max 25 words, single sentence) for kitchen staff at a juice bar and tea house. Mention dietary notes if any. No emojis. No greetings.\" },\n    { \"role\": \"user\", \"content\": \"Customer: {{ $json.Customer_Name_Display }}\\nSubscription: {{ $json.Subscription_Type_Clean }}\\nDietary Notes: {{ $json.Has_Dietary_Notes ? $json.Dietary_Notes : 'None' }}\\nWrite the prep note now.\" }\n  ]\n}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "900ff729-5cf8-464b-ae9a-dc3f4f5fae2f",
+      "name": "OpenRouter Prep Note (Juice)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -496,
+        320
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.API_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://steepedandseeded.local"
+            },
+            {
+              "name": "X-Title",
+              "value": "Steeped & Seeded Tasting Box"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"meta-llama/llama-3.1-8b-instruct:free\",\n  \"temperature\": 0.4,\n  \"max_tokens\": 90,\n  \"messages\": [\n    { \"role\": \"system\", \"content\": \"You write one short prep note (max 25 words, single sentence) for kitchen staff at a juice bar and tea house. Mention dietary notes if any. No emojis. No greetings.\" },\n    { \"role\": \"user\", \"content\": \"Customer: {{ $json.Customer_Name_Display }}\\nSubscription: {{ $json.Subscription_Type_Clean }}\\nDietary Notes: {{ $json.Has_Dietary_Notes ? $json.Dietary_Notes : 'None' }}\\nWrite the prep note now.\" }\n  ]\n}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "ba33fb07-1314-4dc3-b65b-4c0e114b3b2a",
+      "name": "OpenRouter Prep Note (Mixed)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -496,
+        544
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"Order_ID\": \"{{ $('Normalize Fields').item.json.Order_ID }}\",\n  \"Customer_Name\": \"{{ $('Normalize Fields').item.json.Customer_Name }}\",\n  \"Customer_Name_Display\": \"{{ $('Normalize Fields').item.json.Customer_Name_Display }}\",\n  \"Subscription_Type\": \"{{ $('Normalize Fields').item.json.Subscription_Type }}\",\n  \"Subscription_Type_Clean\": \"{{ $('Normalize Fields').item.json.Subscription_Type_Clean }}\",\n  \"Dietary_Notes\": \"{{ $('Normalize Fields').item.json.Dietary_Notes }}\",\n  \"Has_Dietary_Notes\": {{ $('Normalize Fields').item.json.Has_Dietary_Notes }},\n  \"Signup_Date\": \"{{ $('Normalize Fields').item.json.Signup_Date }}\",\n  \"Signup_Date_Display\": \"{{ $('Normalize Fields').item.json.Signup_Date_Display }}\",\n  \"Customer_Email\": \"{{ $('Normalize Fields').item.json.Customer_Email }}\",\n  \"Channel_Targets\": {{ JSON.stringify($('Normalize Fields').item.json.Channel_Targets) }},\n  \"Prep_Note\": \"{{ ($json.choices && $json.choices[0] && $json.choices[0].message && $json.choices[0].message.content ? $json.choices[0].message.content : 'Standard prep \u2014 no special handling.').replace(/\\\"/g, '\\\\\\\"').replace(/\\n/g,' ').trim() }}\"\n}",
+        "options": {}
+      },
+      "id": "20d583d6-f1d5-4c9c-a9dc-8ea18dcd3477",
+      "name": "Attach Prep Note (Tea)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -256,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"Order_ID\": \"{{ $('Normalize Fields').item.json.Order_ID }}\",\n  \"Customer_Name\": \"{{ $('Normalize Fields').item.json.Customer_Name }}\",\n  \"Customer_Name_Display\": \"{{ $('Normalize Fields').item.json.Customer_Name_Display }}\",\n  \"Subscription_Type\": \"{{ $('Normalize Fields').item.json.Subscription_Type }}\",\n  \"Subscription_Type_Clean\": \"{{ $('Normalize Fields').item.json.Subscription_Type_Clean }}\",\n  \"Dietary_Notes\": \"{{ $('Normalize Fields').item.json.Dietary_Notes }}\",\n  \"Has_Dietary_Notes\": {{ $('Normalize Fields').item.json.Has_Dietary_Notes }},\n  \"Signup_Date\": \"{{ $('Normalize Fields').item.json.Signup_Date }}\",\n  \"Signup_Date_Display\": \"{{ $('Normalize Fields').item.json.Signup_Date_Display }}\",\n  \"Customer_Email\": \"{{ $('Normalize Fields').item.json.Customer_Email }}\",\n  \"Channel_Targets\": {{ JSON.stringify($('Normalize Fields').item.json.Channel_Targets) }},\n  \"Prep_Note\": \"{{ ($json.choices && $json.choices[0] && $json.choices[0].message && $json.choices[0].message.content ? $json.choices[0].message.content : 'Standard prep \u2014 no special handling.').replace(/\\\"/g, '\\\\\\\"').replace(/\\n/g,' ').trim() }}\"\n}",
+        "options": {}
+      },
+      "id": "63417930-99bf-4a3d-913d-005f787c1cc7",
+      "name": "Attach Prep Note (Juice)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -256,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"Order_ID\": \"{{ $('Normalize Fields').item.json.Order_ID }}\",\n  \"Customer_Name\": \"{{ $('Normalize Fields').item.json.Customer_Name }}\",\n  \"Customer_Name_Display\": \"{{ $('Normalize Fields').item.json.Customer_Name_Display }}\",\n  \"Subscription_Type\": \"{{ $('Normalize Fields').item.json.Subscription_Type }}\",\n  \"Subscription_Type_Clean\": \"{{ $('Normalize Fields').item.json.Subscription_Type_Clean }}\",\n  \"Dietary_Notes\": \"{{ $('Normalize Fields').item.json.Dietary_Notes }}\",\n  \"Has_Dietary_Notes\": {{ $('Normalize Fields').item.json.Has_Dietary_Notes }},\n  \"Signup_Date\": \"{{ $('Normalize Fields').item.json.Signup_Date }}\",\n  \"Signup_Date_Display\": \"{{ $('Normalize Fields').item.json.Signup_Date_Display }}\",\n  \"Customer_Email\": \"{{ $('Normalize Fields').item.json.Customer_Email }}\",\n  \"Channel_Targets\": {{ JSON.stringify($('Normalize Fields').item.json.Channel_Targets) }},\n  \"Prep_Note\": \"{{ ($json.choices && $json.choices[0] && $json.choices[0].message && $json.choices[0].message.content ? $json.choices[0].message.content : 'Standard prep \u2014 no special handling.').replace(/\\\"/g, '\\\\\\\"').replace(/\\n/g,' ').trim() }}\"\n}",
+        "options": {}
+      },
+      "id": "dec5a127-5a24-4181-9bc9-97344e06e320",
+      "name": "Attach Prep Note (Mixed)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -256,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "guildId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $env.TEA_FULFILLMENT_CHANNEL_ID }}",
+          "mode": "id"
+        },
+        "options": {},
+        "embeds": {
+          "values": [
+            {
+              "color": "#2E7D32",
+              "title": "=New {{ $json.Subscription_Type_Clean }} Order \u2014 {{ $json.Order_ID }}"
+            }
+          ]
+        }
+      },
+      "id": "334be9f8-7c2f-40b4-bdf8-5adc80fb5236",
+      "name": "Discord \u2014 Tea Prep",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "guildId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $env.JUICE_PREP_CHANNEL_ID }}",
+          "mode": "id"
+        },
+        "options": {},
+        "embeds": {
+          "values": [
+            {
+              "color": "#EF6C00",
+              "title": "=New {{ $json.Subscription_Type_Clean }} Order \u2014 {{ $json.Order_ID }}"
+            }
+          ]
+        }
+      },
+      "id": "a543416c-278d-499c-98e2-3cd8670793ba",
+      "name": "Discord \u2014 Juice Prep",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        0,
+        448
+      ],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "New Subscriber Row": {
+      "main": [
+        [
+          {
+            "node": "Normalize Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Fields": {
+      "main": [
+        [
+          {
+            "node": "Has Subscription Type?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Subscription Type?": {
+      "main": [
+        [
+          {
+            "node": "Skipped: Missing Subscription Type",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route by Subscription Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Subscription Type": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter Prep Note (Tea)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "OpenRouter Prep Note (Juice)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "OpenRouter Prep Note (Mixed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Prep Note (Tea)": {
+      "main": [
+        [
+          {
+            "node": "Attach Prep Note (Tea)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Prep Note (Juice)": {
+      "main": [
+        [
+          {
+            "node": "Attach Prep Note (Juice)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Prep Note (Mixed)": {
+      "main": [
+        [
+          {
+            "node": "Attach Prep Note (Mixed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Prep Note (Tea)": {
+      "main": [
+        [
+          {
+            "node": "Discord \u2014 Tea Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Prep Note (Juice)": {
+      "main": [
+        [
+          {
+            "node": "Discord \u2014 Juice Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Prep Note (Mixed)": {
+      "main": [
+        [
+          {
+            "node": "Discord \u2014 Tea Prep",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Discord \u2014 Juice Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": []
+}
