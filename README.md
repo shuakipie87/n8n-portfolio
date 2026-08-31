@@ -1,4 +1,25 @@
-# Project Images
+# Joshua Dingcong - n8n Automation Portfolio
+
+Production-oriented automation projects combining n8n, AI APIs, full-stack engineering, workflow orchestration, and business-system integrations.
+
+## Featured AI Automation Collection
+
+The new [AI Automation Workflow Portfolio](ai-automation-workflows/README.md) contains 16 sanitized, importable n8n workflows across legal operations, automotive diagnostics, healthcare, property management, education, hospitality, HR, field service, and lead management.
+
+Key capabilities demonstrated:
+
+- LLM classification and structured response parsing
+- Confidence gates and deterministic fallback paths
+- Human-in-the-loop approvals
+- Webhook, schedule, and polling triggers
+- Multi-channel notifications and escalation
+- CRM, spreadsheet, calendar, email, chat, VOIP, and weather integrations
+- Validation, idempotency, audit logging, rate limiting, and error handling
+- Environment-variable based secret management
+
+Start here: [Browse the 16 AI automation case studies and workflow exports](ai-automation-workflows/README.md)
+
+## Additional Project Images
 
 Below are the images from the `images` folder:
 

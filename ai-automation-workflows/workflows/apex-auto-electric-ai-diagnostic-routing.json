@@ -1,0 +1,925 @@
+{
+  "name": "Apex Auto Electric - AI Diagnostic Routing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "apex-diagnostic",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "91ece508-e1e3-45d6-a6cb-83d3fb7ce239",
+      "name": "Receive Job Ticket",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1536,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "  const rawJson = $input.first().json;                                                                                    const input = (rawJson && rawJson.body) ? rawJson.body : rawJson;                                                                                                                                                                               const required = ['vehicleModel', 'dtcCode', 'technicianObservations'];                                                 const missing = required.filter(field => {\n    const val = input[field];\n    return val === undefined || val === null || (typeof val === 'string' && val.trim() === '');\n  });\n\n  if (missing.length > 0) {\n    throw new Error('Missing required fields: vehicleModel, dtcCode, and technicianObservations are required');\n  }\n\n  return [\n    {\n      json: {\n        vehicleModel: String(input.vehicleModel).trim(),\n        dtcCode: String(input.dtcCode).trim(),\n        technicianObservations: String(input.technicianObservations).trim()\n      }\n    }\n  ];"
+      },
+      "id": "5913e49c-ea91-458d-85f2-95d1b81136e8",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1328,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"model\": \"claude-opus-4-6\",\n    \"max_tokens\": 16000,\n    \"messages\": [\n      {\n        \"role\": \"user\",\n        \"content\": \"{{ $json.technicianObservations }}\"\n      }\n    ],\n    \"system\": \"You are an automotive diagnostic expert. Analyze the DTC code and technician observations for a {{\n  $json.vehicleModel }} and provide a detailed diagnostic report.\"\n  }",
+        "options": {}
+      },
+      "id": "7697a974-1204-458f-8bca-e1ae96d17036",
+      "name": "AI Classification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -1104,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\n// Retrieve original fields passed through from prior nodes\nconst vehicleModel = input.vehicleModel || '';\nconst dtcCode = input.dtcCode || '';\nconst technicianObservations = input.technicianObservations || '';\n\nconst timestamp = new Date().toISOString();\n\nlet category = 'Unknown';\nlet urgency = 3;\nlet confidence = 'low';\nlet summary = 'AI response could not be parsed; manual triage required.';\n\ntry {\n  const rawContent = input.choices[0].message.content;\n  // Strip markdown code fences if present\n  const cleaned = rawContent.replace(/```json\\s*/gi, '').replace(/```\\s*/gi, '').trim();\n  const parsed = JSON.parse(cleaned);\n\n  // Validate category\n  const validCategories = ['High-Voltage Battery', 'Charging Infrastructure', 'Infotainment/ADAs', 'Drivetrain', 'Unknown'];\n  if (typeof parsed.category === 'string' && validCategories.includes(parsed.category)) {\n    category = parsed.category;\n  }\n\n  // Validate urgency\n  const u = Number(parsed.urgency);\n  if (Number.isInteger(u) && u >= 1 && u <= 5) {\n    urgency = u;\n  }\n\n  // Validate confidence\n  if (parsed.confidence === 'high' || parsed.confidence === 'low') {\n    confidence = parsed.confidence;\n  }\n\n  // Validate summary\n  if (typeof parsed.summary === 'string' && parsed.summary.trim().length > 0) {\n    summary = parsed.summary.trim();\n  }\n} catch (err) {\n  // Parse failed \u2014 defaults already set to Unknown / low confidence\n}\n\nreturn [\n  {\n    json: {\n      vehicleModel,\n      dtcCode,\n      technicianObservations,\n      category,\n      urgency,\n      confidence,\n      summary,\n      timestamp\n    }\n  }\n];"
+      },
+      "id": "c1a021c8-8e5a-433b-9024-8d36d23ca955",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "condition-confidence-high",
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": "low",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1cba2d1b-f2b5-4256-a4c5-c5e7afa1b91e",
+      "name": "Confidence Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {},
+            {},
+            {},
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "f0b348dc-37ca-4154-9b27-ce81c4ea6137",
+      "name": "Route by Category",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -448,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "condition-urgency-gte4",
+              "leftValue": "={{ $json.urgency }}",
+              "rightValue": 4,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b301f584-5f2b-4fda-b166-5518dbc6ec72",
+      "name": "HV Urgency Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \":rotating_light: *HIGH-PRIORITY HV ALERT* :rotating_light:\\n*Vehicle:* {{ $json.vehicleModel }}\\n*DTC:* {{ $json.dtcCode }}\\n*Urgency:* {{ $json.urgency }}/5\\n*Summary:* {{ $json.summary }}\\n*Time:* {{ $json.timestamp }}\"\n}",
+        "options": {}
+      },
+      "id": "dc2593fb-e539-4e0b-863a-0091bf5fb778",
+      "name": "HV Priority Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "High-Voltage Battery",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Vehicle Model": "={{ $json.vehicleModel }}",
+            "DTC Code": "={{ $json.dtcCode }}",
+            "Category": "={{ $json.category }}",
+            "Urgency": "={{ $json.urgency }}",
+            "Summary": "={{ $json.summary }}",
+            "Technician Observations": "={{ $json.technicianObservations }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vehicle Model",
+              "displayName": "Vehicle Model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "DTC Code",
+              "displayName": "DTC Code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Urgency",
+              "displayName": "Urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Technician Observations",
+              "displayName": "Technician Observations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "168b7aeb-511b-4f0c-ad08-77eff9d452d8",
+      "name": "HV Battery Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Charging Infrastructure",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Vehicle Model": "={{ $json.vehicleModel }}",
+            "DTC Code": "={{ $json.dtcCode }}",
+            "Category": "={{ $json.category }}",
+            "Urgency": "={{ $json.urgency }}",
+            "Summary": "={{ $json.summary }}",
+            "Technician Observations": "={{ $json.technicianObservations }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vehicle Model",
+              "displayName": "Vehicle Model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "DTC Code",
+              "displayName": "DTC Code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Urgency",
+              "displayName": "Urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Technician Observations",
+              "displayName": "Technician Observations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ef7d5cbd-1249-44a2-9c0f-6bcbf7e573fe",
+      "name": "Charging Infrastructure Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -224,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Infotainment-ADAs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Vehicle Model": "={{ $json.vehicleModel }}",
+            "DTC Code": "={{ $json.dtcCode }}",
+            "Category": "={{ $json.category }}",
+            "Urgency": "={{ $json.urgency }}",
+            "Summary": "={{ $json.summary }}",
+            "Technician Observations": "={{ $json.technicianObservations }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vehicle Model",
+              "displayName": "Vehicle Model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "DTC Code",
+              "displayName": "DTC Code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Urgency",
+              "displayName": "Urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Technician Observations",
+              "displayName": "Technician Observations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fb58061d-478f-4f6b-81a7-8f0dceacaa7c",
+      "name": "Infotainment General Queue",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -224,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Drivetrain",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Vehicle Model": "={{ $json.vehicleModel }}",
+            "DTC Code": "={{ $json.dtcCode }}",
+            "Category": "={{ $json.category }}",
+            "Urgency": "={{ $json.urgency }}",
+            "Summary": "={{ $json.summary }}",
+            "Technician Observations": "={{ $json.technicianObservations }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vehicle Model",
+              "displayName": "Vehicle Model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "DTC Code",
+              "displayName": "DTC Code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Urgency",
+              "displayName": "Urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Technician Observations",
+              "displayName": "Technician Observations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deb2da13-eb26-4172-837c-8775aba73498",
+      "name": "Drivetrain Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -224,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Manual Triage",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Vehicle Model": "={{ $json.vehicleModel }}",
+            "DTC Code": "={{ $json.dtcCode }}",
+            "Raw Technician Observations": "={{ $json.technicianObservations }}",
+            "AI Category Attempt": "={{ $json.category }}",
+            "AI Confidence": "={{ $json.confidence }}",
+            "Reason": "=Low confidence classification or unknown category \u2014 requires manual review"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vehicle Model",
+              "displayName": "Vehicle Model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "DTC Code",
+              "displayName": "DTC Code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Raw Technician Observations",
+              "displayName": "Raw Technician Observations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "AI Category Attempt",
+              "displayName": "AI Category Attempt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "AI Confidence",
+              "displayName": "AI Confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reason",
+              "displayName": "Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fa9dd9b0-2919-452f-90b6-577998ddb54a",
+      "name": "Manual Triage",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -224,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"received\",\n  \"category\": \"{{ $('Confidence Check').item.json.urgency }}\",\n  \"urgency\": {{ $('Confidence Check').item.json.urgency }}\n}",
+        "options": {}
+      },
+      "id": "fae91490-ba48-4026-b959-888011f14444",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        224,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Receive Job Ticket": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "AI Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Classification": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Confidence Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confidence Check": {
+      "main": [
+        [
+          {
+            "node": "Route by Category",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manual Triage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Category": {
+      "main": [
+        [
+          {
+            "node": "HV Urgency Gate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Charging Infrastructure Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Infotainment General Queue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Drivetrain Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HV Urgency Gate": {
+      "main": [
+        [
+          {
+            "node": "HV Priority Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HV Battery Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HV Priority Slack": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HV Battery Sheet": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Charging Infrastructure Sheet": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Infotainment General Queue": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drivetrain Sheet": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Triage": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-04-06T05:59:37.319Z",
+      "createdAt": "2026-04-06T05:59:37.319Z",
+      "id": "2e7LPJ7hBrdRFr4f",
+      "name": "ai-classification"
+    },
+    {
+      "updatedAt": "2026-04-06T05:59:37.319Z",
+      "createdAt": "2026-04-06T05:59:37.319Z",
+      "id": "anOlklUnODnt4bNZ",
+      "name": "diagnostics"
+    },
+    {
+      "updatedAt": "2026-04-06T05:59:37.309Z",
+      "createdAt": "2026-04-06T05:59:37.309Z",
+      "id": "hJBbiySrVkDhY22g",
+      "name": "automotive"
+    }
+  ]
+}

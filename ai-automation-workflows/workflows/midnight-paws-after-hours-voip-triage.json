@@ -1,0 +1,381 @@
+{
+  "name": "Midnight Paws - After-Hours VOIP Lead Triage",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "midnight-paws-voip-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "454dd3d1-2584-40b7-96a1-d5d8170d35b5",
+      "name": "VOIP Intake Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        96
+      ],
+      "notesInFlow": true,
+      "notes": "Entry point for all VOIP system events. Accepts POST requests from the VOIP provider (simulated). Expected fields: caller_id (required), caller_name (optional), timestamp (ISO 8601, required), voicemail_url (optional), call_type (optional: missed_call | voicemail). Data arrives under $json.body. Produces raw VOIP payload for downstream processing."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// TIME-BASED LOGIC  Midnight Paws Grooming\n// Active Grooming Hours: 20:00  03:59 (America/Los_Angeles)\n// Admin Hours:           04:00  19:59 (America/Los_Angeles)\n// ============================================================\n\nconst item = $input.first();\nconst body = item.json.body || item.json;\n\nconst callerId   = body.caller_id    || 'Unknown'body;\nconst callerName = body.caller_name  || 'Unknown Caller'body;\nconst rawTs      = body.timestamp    || new Date().toISOString();\nconst voicemailUrl = body.voicemail_url || ''body;\nconst callType   = body.call_type    || 'missed_call'body;\n\n// Parse the timestamp and convert to America/Los_Angeles local hour.\n// Luxon DateTime is available globally in n8n Code nodes.\nconst tsUtc = DateTime.fromISO(rawTs, { setZone: true });\nif (!tsUtc.isValid) {\n    throw new Error('Invalid timestamp: ' + rawTs);\n}\n\nconst tsLA = tsUtc.setZone('America/Los_Angeles');\nconst localHour = tsLA.hour; // 023\n\n// Active Grooming Hours span across midnight: 20 = hour OR hour < 4\n// Admin Hours: 4 = hour = 19\nconst isAfterHours = (localHour >= 20) || (localHour < 4);\nconst shiftStatus = isAfterHours ? 'After-hours' : 'Daytime'body;\n\nconst bookingCalendarUrl = 'https://midnightpawsgrooming.as.me/'body;\n\nreturn [{\n    json: {\n          caller_id:           callerId,\n          caller_name:         callerName,\n          call_timestamp:      tsLA.toISO(),\n          call_type:           callType,\n          voicemail_url:       voicemailUrl,\n          local_hour_la:       localHour,\n          shift_status:        shiftStatus,\n          booking_calendar_url: bookingCalendarUrl,\n          logged_at:           DateTime.now().setZone('America/Los_Angeles').toISO()\n    }\n}];"
+      },
+      "id": "c4cffda7-72e9-488c-a545-4aa47e395510",
+      "name": "Time-Based Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        96
+      ],
+      "notesInFlow": true,
+      "notes": "Determines shift_status from the incoming timestamp. Converts the ISO 8601 timestamp to America/Los_Angeles time using Luxon DateTime (built into n8n). Active Grooming Hours = 20:00\u201303:59 (spans midnight, so localHour >= 20 OR localHour < 4). Admin Hours = 04:00\u201319:59. Outputs enriched item with shift_status ('After-hours' or 'Daytime'), local_hour_la, caller fields, and booking_calendar_url."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-shift-status",
+              "leftValue": "={{ $json.shift_status }}",
+              "rightValue": "After-hours",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3d7696ee-3d04-46de-b688-6cfe5e4778b3",
+      "name": "Route by Shift",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        96
+      ],
+      "notesInFlow": true,
+      "notes": "Branches on shift_status. True output (index 0) = 'After-hours' \u2192 groomer-is-busy message. False output (index 1) = 'Daytime' \u2192 admin-team message. Both branches converge at the Google Sheets append node to maintain a single log regardless of shift."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.caller_id }}"
+            },
+            {
+              "name": "From",
+              "value": "+10000000000"
+            },
+            {
+              "name": "Body",
+              "value": "={{ 'Hi! This is Midnight Paws Grooming. Our groomer is currently with a reactive pet and cannot interrupt the session. We\\'ll call you back at the next safe break. In the meantime, you can book directly here: ' + $json.booking_calendar_url }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {}
+        }
+      },
+      "id": "cba00148-841e-4c44-bcbb-fb96459dad10",
+      "name": "Send After-Hours SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        16,
+        0
+      ],
+      "notesInFlow": true,
+      "notes": "Sends the after-hours automated SMS reply via Twilio REST API. Fires only when shift_status = 'After-hours'. Message text: groomer is with reactive pet, will call back at safe break, booking link appended. Credential is Twilio Account SID (username) + Auth Token (password) as HTTP Basic Auth. Replace credential ID after import."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.caller_id }}"
+            },
+            {
+              "name": "From",
+              "value": "+10000000000"
+            },
+            {
+              "name": "Body",
+              "value": "={{ 'Hi! Thanks for calling Midnight Paws Grooming. Our admin team will return your call shortly. You can also book here: ' + $json.booking_calendar_url }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {}
+        }
+      },
+      "id": "df5115e5-af27-4e0f-b582-14647354f6db",
+      "name": "Send Daytime SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        16,
+        192
+      ],
+      "notesInFlow": true,
+      "notes": "Sends the daytime automated SMS reply via Twilio REST API. Fires only when shift_status = 'Daytime'. Message text: admin team will return call, booking link appended. Same Twilio credential as After-Hours SMS. Replace credential ID after import."
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Lead Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "caller_id": "={{ $json.caller_id }}",
+            "caller_name": "={{ $json.caller_name }}",
+            "call_timestamp": "={{ $json.call_timestamp }}",
+            "shift_status": "={{ $json.shift_status }}",
+            "response_sent": "={{ $json.response_sent }}",
+            "booking_url": "={{ $json.booking_calendar_url }}",
+            "logged_at": "={{ $json.logged_at }}"
+          },
+          "schema": [
+            {
+              "id": "caller_id",
+              "displayName": "caller_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "caller_name",
+              "displayName": "caller_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "call_timestamp",
+              "displayName": "call_timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "shift_status",
+              "displayName": "shift_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "response_sent",
+              "displayName": "response_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "booking_url",
+              "displayName": "booking_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "logged_at",
+              "displayName": "logged_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2e973fb2-3379-4841-b419-e47f95ca0960",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        240,
+        96
+      ],
+      "notesInFlow": true,
+      "notes": "Single convergence point for both branches. Appends one row to the 'Lead Log' sheet regardless of shift_status. Columns: caller_id, caller_name, call_timestamp, shift_status, response_sent, booking_url, logged_at. Both the After-hours SMS node and the Daytime SMS node connect here. Replace spreadsheetId and credential ID after import."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'ok', message: 'Lead received and logged.', caller_id: $json.caller_id || 'unknown', shift_status: $json.shift_status || 'unknown', logged_at: $json.logged_at || new Date().toISOString() }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "f24254ca-3a09-4be6-ad27-953a30d9cfda",
+      "name": "Acknowledge VOIP System",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        464,
+        96
+      ],
+      "notesInFlow": true,
+      "notes": "Closes the HTTP response loop by returning a 200 JSON acknowledgment to the VOIP system. Must be the terminal node for the responseMode: responseNode webhook. Returns caller_id, shift_status, and logged_at so the VOIP platform can confirm receipt. Both branches converge at Sheets first, then here."
+    }
+  ],
+  "connections": {
+    "VOIP Intake Webhook": {
+      "main": [
+        [
+          {
+            "node": "Time-Based Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Time-Based Logic": {
+      "main": [
+        [
+          {
+            "node": "Route by Shift",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Shift": {
+      "main": [
+        [
+          {
+            "node": "Send After-Hours SMS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Daytime SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send After-Hours SMS": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Daytime SMS": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge VOIP System",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-04-16T06:02:18.221Z",
+      "createdAt": "2026-04-16T06:02:18.221Z",
+      "id": "drANi8cnmNt2rW4c",
+      "name": "voip"
+    },
+    {
+      "updatedAt": "2026-04-25T21:31:21.110Z",
+      "createdAt": "2026-04-25T21:31:21.110Z",
+      "id": "vgva3mJAAyaLbq1N",
+      "name": "midnight-paws"
+    },
+    {
+      "updatedAt": "2026-04-10T18:24:02.837Z",
+      "createdAt": "2026-04-10T18:24:02.837Z",
+      "id": "wvljKlRnqiMGABCg",
+      "name": "lead-triage"
+    }
+  ]
+}

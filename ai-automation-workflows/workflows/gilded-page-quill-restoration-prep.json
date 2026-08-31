@@ -1,0 +1,409 @@
+{
+  "name": "Gilded Page & Quill \u2014 Restoration Prep Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "calendarId": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_ID",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "triggerOn": "eventCreatedOrUpdated",
+        "options": {}
+      },
+      "id": "368c8069-2ab4-4a10-b198-568e0c63b729",
+      "name": "Public Consultations Trigger",
+      "type": "n8n-nodes-base.googleCalendarTrigger",
+      "typeVersion": 1,
+      "position": [
+        3904,
+        1584
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Gilded Page & Quill\n### Restoration Consultation Workspace Prep\n\n**Purpose:** Automatically creates a 30-minute \"Restoration Prep\" block before every restoration consultation.\n\n**Flow:**\n1. Watch primary calendar for events\n2. Filter events containing \"Restoration\"\n3. Check for existing prep block (duplicate prevention)\n4. Create 30-min buffer event on the same calendar\n\n**Non-restoration bookings** (e.g., Personal Shopping) are silently skipped.\n\n**Current calendar:** portfolio@example.com\nUpgrade: create a dedicated Staff Operations calendar and update the 3 calendar nodes.",
+        "height": 300,
+        "width": 832,
+        "color": 7
+      },
+      "id": "e96c0a67-f0b9-4569-a8a3-22d4bdf1a253",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3536,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const event = $input.first().json;\nconst title = event.summary || '';\nconst isRestoration = title.toLowerCase().includes('restoration');\n\nreturn [{ json: { ...event, isRestoration } }];"
+      },
+      "id": "c04658ab-546d-47d5-977f-46a799c833a1",
+      "name": "Code: Normalize & Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4352,
+        1584
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Event Filter\n\n**Checks:** Does the event title contain \"Restoration\"? (case-insensitive)\n\n**Passes:** Book Restoration - Jane Doe\n**Passes:** Rare Edition Restoration: The Hammond Collection\n**Skips:** Personal Shopping - Lunch\n**Skips:** Appointment - General Inquiry",
+        "height": 296,
+        "width": 504,
+        "color": 5
+      },
+      "id": "86044b98-64c9-41b5-995f-09278aed4d36",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        4464,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-restore-check",
+              "leftValue": "={{ $json.isRestoration }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "52ae1b93-362f-48ef-9338-8e17906a63a0",
+      "name": "IF: Is Restoration?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4640,
+        1584
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "63bbfdc7-f4a8-445e-b8a0-e4b9d69fde5f",
+      "name": "Skip \u2013 Not Restoration",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4912,
+        1760
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const event = $input.first().json;\nconst title = event.summary || '';\n\n// Extract client name from various title formats:\n// \"Book Restoration - Jane Doe\" \u2192 \"Jane Doe\"\n// \"Rare Edition Restoration: The Hammond Collection\" \u2192 \"The Hammond Collection\"\n// Fallback: use full title\nconst match = title.match(/restoration[:\\s\\-\\u2013\\u2014]+(.+)/i);\nconst clientName = match ? match[1].trim() : title.trim();\n\n// Parse consultation start time\nconst rawStart = event.start?.dateTime || event.start?.date || new Date().toISOString();\nconst consultStart = new Date(rawStart);\n\n// Calculate 30-minute prep window immediately preceding consultation\nconst prepStart = new Date(consultStart.getTime() - 30 * 60 * 1000);\nconst prepEnd = new Date(consultStart.getTime());\n\nconst prepTitle = `Restoration Prep: ${clientName}`;\nconst originalDescription = event.description || '';\n\nreturn [{\n  json: {\n    clientName,\n    originalTitle: title,\n    originalDescription,\n    consultationStart: consultStart.toISOString(),\n    prepStartISO: prepStart.toISOString(),\n    prepEndISO: prepEnd.toISOString(),\n    prepTitle,\n    eventId: event.id || '',\n    prepDescription: `Original consultation: ${title}\\n\\n${originalDescription}`.trim()\n  }\n}];"
+      },
+      "id": "76de2e6e-fcd2-4e43-9478-aa949e023702",
+      "name": "Code: Extract Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4912,
+        1584
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Duplicate Prevention\n\n**Problem:** If a consultation event is updated (e.g., description change), the workflow re-fires. Without this check, a second prep block would be created.\n\n**Solution:** Search the calendar for an existing event matching the prep title within the exact 30-minute prep window. If found \u2192 skip. If not found \u2192 create.\n\n**Note:** alwaysOutputData is ON so 0 results still continues to the IF check.",
+        "height": 316,
+        "width": 548,
+        "color": 3
+      },
+      "id": "e6510544-bb30-4c81-9afd-551293c70d4d",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        5152,
+        1104
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "portfolio@example.com",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "limit": 10,
+        "options": {
+          "timeMin": "={{ $json.prepStartISO }}",
+          "timeMax": "={{ $json.prepEndISO }}",
+          "singleEvents": true,
+          "query": "={{ $json.prepTitle }}"
+        }
+      },
+      "id": "17656cc0-5bf2-4f8a-954a-8d4405fcc9cb",
+      "name": "Search: Existing Prep Blocks",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        5200,
+        1584
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-dup-check",
+              "leftValue": "={{ $input.all().filter(i => i.json && i.json.id).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b7af7cbd-ff3b-4c82-850d-a102057b77d5",
+      "name": "IF: Duplicate Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        5472,
+        1584
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "74b36e7b-2e93-48b9-a676-a669cb3d9558",
+      "name": "Skip \u2013 Duplicate Exists",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        5760,
+        1760
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "portfolio@example.com",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "start": "={{ $('Code: Extract Data').item.json.prepStartISO }}",
+        "end": "={{ $('Code: Extract Data').item.json.prepEndISO }}",
+        "additionalFields": {
+          "description": "={{ $('Code: Extract Data').item.json.prepDescription }}",
+          "sendUpdates": "none",
+          "summary": "={{ $('Code: Extract Data').item.json.prepTitle }}"
+        }
+      },
+      "id": "8553efcb-1116-479a-a1d1-3c84ed0d663e",
+      "name": "Create: Restoration Prep Block",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        5760,
+        1584
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Prep Block Created\n\n**Title format:** Restoration Prep: [Client Name]\n**Duration:** 30 minutes, ending exactly when consultation begins\n**Color:** Sage Green (Color ID 2)\n**Description:** Includes original consultation title + description so staff know which materials to pull\n\n**Example:**\n- Consultation: \"Book Restoration - Margaret Ashford\" at 2:00 PM\n- Prep block: \"Restoration Prep: Margaret Ashford\" 1:30 PM \u2013 2:00 PM\n\n**Calendar:** portfolio@example.com",
+        "height": 324,
+        "width": 480,
+        "color": 6
+      },
+      "id": "48093773-605d-46bf-b984-81f5b458410c",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        5968,
+        1104
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "5562ecf2-fb06-410c-bc73-07dd5ebe210a",
+      "name": "Prep Block Created",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        6032,
+        1584
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Status\n\n**Credential:** Google Calendar account (connected)\n**Calendar:** portfolio@example.com (primary)\n\n**Done:**\n- Google Calendar credential connected\n- All 3 calendar nodes use your real account\n- alwaysOutputData prevents empty-result halt\n- Duplicate check uses real event ID filter\n\n**Optional upgrade:**\nCreate a dedicated \"Staff Operations\" calendar in Google Calendar, then update the calendar field in the Search and Create nodes to separate personal from work events.",
+        "height": 332,
+        "width": 832,
+        "color": 4
+      },
+      "id": "7fd76894-c143-44ba-b887-99a197a620db",
+      "name": "Sticky Note4",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3536,
+        1904
+      ]
+    }
+  ],
+  "connections": {
+    "Public Consultations Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code: Normalize & Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Normalize & Check": {
+      "main": [
+        [
+          {
+            "node": "IF: Is Restoration?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Is Restoration?": {
+      "main": [
+        [
+          {
+            "node": "Code: Extract Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip \u2013 Not Restoration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Extract Data": {
+      "main": [
+        [
+          {
+            "node": "Search: Existing Prep Blocks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search: Existing Prep Blocks": {
+      "main": [
+        [
+          {
+            "node": "IF: Duplicate Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Duplicate Exists?": {
+      "main": [
+        [
+          {
+            "node": "Skip \u2013 Duplicate Exists",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create: Restoration Prep Block",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create: Restoration Prep Block": {
+      "main": [
+        [
+          {
+            "node": "Prep Block Created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-04-12T16:41:04.594Z",
+      "createdAt": "2026-04-12T16:41:04.594Z",
+      "id": "9eBZe9nEjeePePko",
+      "name": "restoration"
+    },
+    {
+      "updatedAt": "2026-04-12T16:41:04.595Z",
+      "createdAt": "2026-04-12T16:41:04.595Z",
+      "id": "9pVNjtpJexHMMGqw",
+      "name": "calendar-automation"
+    },
+    {
+      "updatedAt": "2026-04-12T16:41:04.598Z",
+      "createdAt": "2026-04-12T16:41:04.598Z",
+      "id": "ki2DoIlVqIJc21Ok",
+      "name": "gilded-page-quill"
+    }
+  ]
+}

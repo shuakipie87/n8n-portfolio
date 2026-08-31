@@ -1,0 +1,1302 @@
+{
+  "name": "HighPoint Trades \u2014 Job Status Monitor & Multi-Channel Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "highpoint_trades_jobs",
+          "mode": "name"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "id": "79dafe33-262c-4123-9da4-41a80994a4a8",
+      "name": "Trigger_GoogleSheets_Poll",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2080,
+        2256
+      ],
+      "notes": "PURPOSE: Poll Google Sheets JobTracker tab every 2 minutes for new or changed rows.\nINPUT: Google Sheets rows with CSV job fields.\nOUTPUT: One item per detected row change.\nCONFIG: Replace YOUR_GOOGLE_SHEET_ID with your actual Sheet ID. Sheet must have headers: JobID, CustomerName, CustomerEmail, JobType, Priority, CurrentStatus, InstallationZipCode, PreviousStatus.\nERRORS: 403 = re-authenticate Google Sheets OAuth2 credential."
+    },
+    {
+      "parameters": {
+        "jsCode": "// DECISION LOG:\n// 1. Map raw sheet columns to canonical workflow variables\n// 2. Detect status change by comparing CurrentStatus vs PreviousStatus\n// 3. Flag missing email (Error Type 1 detection)\n// 4. Check digest cache to prevent duplicate notifications within 5-minute window\n// 5. Weather cache: 3-hour TTL keyed by zip code\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.digestCache) staticData.digestCache = {};\nif (!staticData.weatherCache) staticData.weatherCache = {};\n\nconst now = Date.now();\nconst DIGEST_TTL_MS = 5 * 60 * 1000; // 5 minutes\n\nconst results = [];\n\nfor (const item of $input.all()) {\n  const row = item.json;\n\n  // Map CSV columns to canonical variables\n  const csv_jobId = (row.JobID || '').trim();\n  const csv_customerName = (row.CustomerName || '').trim();\n  const csv_customerEmail = (row.CustomerEmail || '').trim();\n  const csv_jobType = (row.JobType || '').trim();\n  const csv_priority = (row.Priority || '').trim();\n  const csv_status = (row.CurrentStatus || '').trim();\n  const csv_previousStatus = (row.PreviousStatus || '').trim();\n  const csv_zipCode = (row.InstallationZipCode || '').trim();\n\n  // Skip if no status change detected\n  if (csv_status === csv_previousStatus) {\n    continue;\n  }\n\n  // Digest check: suppress if same JobID+Status seen within 5 min\n  const digestKey = `${csv_jobId}_${csv_status}`;\n  const lastSeen = staticData.digestCache[digestKey];\n  const is_duplicate = lastSeen && (now - lastSeen) < DIGEST_TTL_MS;\n\n  if (is_duplicate) {\n    // Suppress \u2014 duplicate within window\n    continue;\n  }\n\n  // Update digest cache\n  staticData.digestCache[digestKey] = now;\n\n  // Error Type 1: Missing email detection\n  const has_missing_email = !csv_customerEmail || csv_customerEmail === '';\n\n  // Email validation regex\n  const emailValid = !has_missing_email && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(csv_customerEmail);\n\n  // Routing flags\n  const should_check_weather = csv_status === 'Scheduled';\n  const should_send_slack = csv_priority === 'Urgent';\n  const should_send_email = !has_missing_email && emailValid;\n\n  // Zip code basic validation (5 digits)\n  const zip_valid = /^\\d{5}$/.test(csv_zipCode);\n  const effective_zip = zip_valid ? csv_zipCode : '90210'; // fallback zip\n  const zip_substituted = !zip_valid;\n\n  results.push({\n    json: {\n      csv_jobId,\n      csv_customerName,\n      csv_customerEmail,\n      csv_jobType,\n      csv_priority,\n      csv_status,\n      csv_previousStatus,\n      csv_zipCode,\n      effective_zip,\n      zip_substituted,\n      has_missing_email,\n      should_check_weather,\n      should_send_slack,\n      should_send_email,\n      digestKey,\n      processedAt: new Date().toISOString()\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "e4cf8ae3-7fd2-40b3-8fb9-265a740ed233",
+      "name": "Code_ValidateAndNormalize_Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1856,
+        2256
+      ],
+      "notes": "PURPOSE: Validate all job records, detect status changes, apply digest cache, detect missing emails.\nINPUT: Raw Google Sheets row data.\nOUTPUT: Normalized job objects with routing flags. Duplicates and unchanged statuses are dropped.\nCONFIG: DIGEST_TTL_MS = 300000 (5 min). Fallback zip = 90210.\nERRORS: Empty return = all rows were duplicates or had no status change."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-missing-email",
+              "leftValue": "={{ $json.CustomerEmail }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "34ad85eb-156d-4aba-9e4c-bf2023981884",
+      "name": "IF_MissingEmail_Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1632,
+        2256
+      ],
+      "notes": "PURPOSE: Route records with missing customer email to error logging branch.\nINPUT: Normalized job record with has_missing_email flag.\nOUTPUT: TRUE = missing email (error path), FALSE = email present (main flow).\nCONFIG: No config required.\nERRORS: N/A"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error Type 1: Missing Customer Email\n// Prepare log entry for Issues sheet and alert payload\nreturn $input.all().map(item => ({\n  json: {\n    Timestamp: new Date().toISOString(),\n    ErrorType: 'MissingEmail',\n    AffectedJobID: item.json.csv_jobId,\n    Details: `Customer ${item.json.csv_customerName} has no email on record. Job type: ${item.json.csv_jobType}, Priority: ${item.json.csv_priority}, Status: ${item.json.csv_status}`,\n    Resolution: 'Manual contact required',\n    NotifiedManager: 'Y',\n    DateResolved: '',\n    // Pass-through for Slack alert\n    csv_jobId: item.json.csv_jobId,\n    csv_customerName: item.json.csv_customerName,\n    csv_priority: item.json.csv_priority,\n    csv_status: item.json.csv_status\n  }\n}));"
+      },
+      "id": "9b5bf95f-d078-4114-a01a-401b855cdf5a",
+      "name": "Code_PrepareLog_MissingEmail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1408,
+        2064
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1459196721,
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource",
+          "cachedResultUrl": "https://example.com/resource"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "Timestamp\tErrorType\tAffectedJobID\tDetails\tResolution\tNotifiedManager\tDateResolved"
+          ],
+          "schema": [
+            {
+              "id": "Timestamp\tErrorType\tAffectedJobID\tDetails\tResolution\tNotifiedManager\tDateResolved",
+              "displayName": "Timestamp\tErrorType\tAffectedJobID\tDetails\tResolution\tNotifiedManager\tDateResolved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "d0dbf66c-154b-47c7-b614-3211863b6e3a",
+      "name": "Log_Issues_MissingEmail",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1184,
+        2064
+      ],
+      "notes": "PURPOSE: Log missing email error to Issues tab.\nINPUT: Error log record from Code_PrepareLog_MissingEmail.\nOUTPUT: Appended row in Issues sheet.\nCONFIG: Sheet must have Issues tab with columns: Timestamp, ErrorType, AffectedJobID, Details, Resolution, NotifiedManager, DateResolved.\nERRORS: 403 = re-authenticate."
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AS8TNAEGP",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "text": "=:warning: *MISSING EMAIL \u2014 Action Required*\n\nJob ID: {{ $json.csv_jobId }}\nCustomer: {{ $json.csv_customerName }}\nPriority: {{ $json.csv_priority }}\nStatus: {{ $json.csv_status }}\n\nThis customer has no email on record. Manual contact required. Check the Issues sheet for full details.",
+        "otherOptions": {}
+      },
+      "id": "890010a8-35a6-4f6c-9604-6e6f43b5da36",
+      "name": "Slack_Alert_MissingEmail",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        -960,
+        2064
+      ],
+      "notes": "PURPOSE: Alert Operations Manager in #alerts channel when a customer email is missing.\nINPUT: Log record with job details.\nOUTPUT: Slack message in #alerts.\nCONFIG: Slack credential must have post permissions to #alerts channel.\nERRORS: 403 = re-authorize Slack. 404 = channel name wrong."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-scheduled",
+              "leftValue": "={{ $json.should_check_weather }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2fa70f56-cb12-4855-9ed2-13eb272c8733",
+      "name": "IF_StatusIsScheduled_WeatherCheck",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1408,
+        2352
+      ],
+      "notes": "PURPOSE: Only run weather API for Scheduled jobs. All other statuses bypass weather entirely.\nINPUT: Normalized job record.\nOUTPUT: TRUE = Scheduled (go to weather check), FALSE = not Scheduled (go directly to priority routing).\nCONFIG: None.\nERRORS: N/A"
+    },
+    {
+      "parameters": {
+        "jsCode": "// DECISION LOG:\n// Weather cache: 3-hour TTL keyed by zip code\n// If cache hit and fresh (<3 hours): skip API call, reuse cached rain probability\n// If cache miss or stale: flag for API call\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.weatherCache) staticData.weatherCache = {};\n\nconst WEATHER_CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours\nconst now = Date.now();\n\nreturn $input.all().map(item => {\n  const zip = item.json.effective_zip;\n  const cached = staticData.weatherCache[zip];\n  const cacheHit = cached && (now - cached.timestamp) < WEATHER_CACHE_TTL_MS;\n\n  return {\n    json: {\n      ...item.json,\n      weather_cache_hit: cacheHit,\n      weather_rainProbability: cacheHit ? cached.rainProbability : null,\n      weather_condition: cacheHit ? cached.condition : null,\n      weather_from_cache: cacheHit\n    }\n  };\n});"
+      },
+      "id": "bc9fec32-22df-4c2d-a92c-724f04797f94",
+      "name": "Code_CheckWeatherCache_3hrTTL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1184,
+        2256
+      ],
+      "notes": "PURPOSE: Check 3-hour weather cache before hitting OpenWeatherMap API. Reduces API calls and prevents rate limiting.\nINPUT: Job record with effective_zip.\nOUTPUT: Same record with cache status flags. If cache hit, rainProbability is pre-populated.\nCONFIG: WEATHER_CACHE_TTL_MS = 10800000 (3 hours).\nERRORS: N/A \u2014 cache miss simply sends to API node."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-cache-hit",
+              "leftValue": "={{ $json.weather_cache_hit }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2f0a77ab-148d-4c7a-99d4-b9ddb2df6c82",
+      "name": "IF_WeatherCacheHit_SkipAPI",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -960,
+        2256
+      ],
+      "notes": "PURPOSE: If weather data is cached and fresh, skip API call entirely.\nINPUT: Job record with weather_cache_hit flag.\nOUTPUT: TRUE = use cached data (skip to rain decision), FALSE = call API.\nCONFIG: None.\nERRORS: N/A"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.openweathermap.org/data/2.5/forecast?zip={{ $json.effective_zip }},US&appid=d7f6206da48fcf2a301012fc73531837&units=imperial&cnt=8",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "01e03cff-beff-495f-b645-8d76b38ae2b3",
+      "name": "API_OpenWeatherMap_RainCheck",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -512,
+        2192
+      ],
+      "continueOnFail": true,
+      "notes": "PURPOSE: Fetch 24-hour rain forecast from OpenWeatherMap for the job zip code.\nINPUT: Job record with effective_zip and WEATHER_API_KEY env var.\nOUTPUT: OpenWeatherMap forecast JSON. On failure, continueOnFail passes error downstream.\nCONFIG: Set WEATHER_API_KEY environment variable in n8n. cnt=8 returns 8 x 3-hour windows (24 hours).\nERRORS: 401 = invalid API key. 404 = zip not found (Error Type 3). 429 = rate limit (Error Type 5). Timeout = Error Type 2."
+    },
+    {
+      "parameters": {
+        "jsCode": "// DECISION LOG:\n// Parse OpenWeatherMap 5-day/3-hour forecast response\n// Extract max rain probability (pop) across first 8 windows (24 hours)\n// Detect API errors: timeout, 404 (bad zip), 401 (bad key), 429 (rate limit)\n// Store result in weather cache keyed by zip\n// Apply fallback on any error condition\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.weatherCache) staticData.weatherCache = {};\n\nconst results = [];\n\nfor (const item of $input.all()) {\n  const response = item.json;\n  const effectiveZip = response.effective_zip || response.csv_zipCode || 'unknown';\n  const originalZip = response.csv_zipCode || effectiveZip;\n\n  // Detect API-level errors (continueOnFail passes error object)\n  const isApiError = response.error || response.statusCode >= 400 || !response.list;\n  const isZipError = response.cod == '404' || (response.message && response.message.toLowerCase().includes('not found'));\n  const isRateLimit = response.cod == '429' || response.statusCode == 429;\n  const isAuthError = response.cod == '401' || response.statusCode == 401;\n\n  let weather_rainProbability = 50; // fallback: conservative assumption\n  let weather_condition = 'Unknown';\n  let weather_api_error = false;\n  let weather_error_type = null;\n  let weather_error_detail = null;\n  let weather_zip_substituted = response.zip_substituted || false;\n\n  if (isZipError) {\n    weather_api_error = true;\n    weather_error_type = 'InvalidZip';\n    weather_error_detail = `Zip code ${originalZip} not recognized by OpenWeatherMap. Used fallback zip ${effectiveZip}.`;\n    // Default to conservative forecast\n    weather_rainProbability = 50;\n    weather_condition = 'Unknown';\n  } else if (isRateLimit) {\n    weather_api_error = true;\n    weather_error_type = 'RateLimit';\n    weather_error_detail = `OpenWeatherMap rate limit hit for zip ${effectiveZip}.`;\n    weather_rainProbability = 50;\n    weather_condition = 'Unknown';\n  } else if (isAuthError) {\n    weather_api_error = true;\n    weather_error_type = 'WeatherAPIFailure';\n    weather_error_detail = 'Invalid OpenWeatherMap API key (401).';\n    weather_rainProbability = 50;\n    weather_condition = 'Unknown';\n  } else if (isApiError) {\n    weather_api_error = true;\n    weather_error_type = 'WeatherAPIFailure';\n    weather_error_detail = `API error for zip ${effectiveZip}: ${JSON.stringify(response.error || response.message || 'timeout/unknown')}`;\n    weather_rainProbability = 50;\n    weather_condition = 'Unknown';\n  } else {\n    // Successful response \u2014 parse rain probability\n    const forecastList = response.list || [];\n    const windows = forecastList.slice(0, 8); // up to 24 hours\n    // pop is 0\u20131 in the API, convert to 0\u2013100\n    const maxPop = windows.reduce((max, w) => {\n      const pop = w.pop !== undefined ? w.pop : 0;\n      const popPct = pop <= 1 ? pop * 100 : pop; // handle both formats\n      return Math.max(max, popPct);\n    }, 0);\n    weather_rainProbability = Math.round(maxPop);\n    weather_condition = (windows[0] && windows[0].weather && windows[0].weather[0])\n      ? windows[0].weather[0].main\n      : 'Clear';\n\n    // Cache the result\n    staticData.weatherCache[effectiveZip] = {\n      timestamp: Date.now(),\n      rainProbability: weather_rainProbability,\n      condition: weather_condition\n    };\n  }\n\n  results.push({\n    json: {\n      ...response,\n      weather_rainProbability,\n      weather_condition,\n      weather_api_error,\n      weather_error_type,\n      weather_error_detail,\n      weather_zip_substituted\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "6f91f2d2-e93e-42e5-969e-77cadfcc44a3",
+      "name": "Code_ParseWeather_RainProbability",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        2192
+      ],
+      "notes": "PURPOSE: Parse OpenWeatherMap response, extract max rain probability for next 24 hours, detect all error types, update weather cache.\nINPUT: Raw API response (or error object from continueOnFail).\nOUTPUT: Job record enriched with weather_rainProbability (0-100), weather_api_error flag, error details.\nCONFIG: Rain probability >60 triggers delay branch. Fallback = 50% (conservative).\nERRORS: All handled internally \u2014 error flags trigger downstream error logging nodes."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-api-error",
+              "leftValue": "={{ $json.weather_api_error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1a15bcac-6a7d-4f40-ba59-5fdebf22dea2",
+      "name": "IF_WeatherAPIError_LogAndContinue",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -64,
+        2192
+      ],
+      "notes": "PURPOSE: Detect weather API errors and route to error logging. Execution CONTINUES after logging (non-blocking).\nINPUT: Parsed weather record with weather_api_error flag.\nOUTPUT: TRUE = API error (log + continue), FALSE = clean data (proceed to rain decision).\nCONFIG: None.\nERRORS: N/A"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error Types 2, 3, 5: Weather API Failure, Invalid Zip, Rate Limit\n// Log entry and continue with fallback forecast\nreturn $input.all().map(item => ({\n  json: {\n    Timestamp: new Date().toISOString(),\n    ErrorType: item.json.weather_error_type || 'WeatherAPIFailure',\n    AffectedJobID: item.json.csv_jobId,\n    Details: item.json.weather_error_detail || 'Unknown weather API error',\n    Resolution: 'Fallback forecast applied (50% rain probability). Manager notified.',\n    NotifiedManager: 'Y',\n    DateResolved: '',\n    // Pass-through for alert and continuation\n    csv_jobId: item.json.csv_jobId,\n    csv_customerName: item.json.csv_customerName,\n    csv_priority: item.json.csv_priority,\n    csv_status: item.json.csv_status,\n    csv_customerEmail: item.json.csv_customerEmail,\n    csv_jobType: item.json.csv_jobType,\n    csv_zipCode: item.json.csv_zipCode,\n    effective_zip: item.json.effective_zip,\n    weather_rainProbability: item.json.weather_rainProbability,\n    weather_error_type: item.json.weather_error_type,\n    should_send_slack: item.json.should_send_slack,\n    should_send_email: item.json.should_send_email\n  }\n}));"
+      },
+      "id": "2db188bb-1792-47e4-84cf-4e1222524f39",
+      "name": "Code_PrepareLog_WeatherError",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        2112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1459196721,
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource",
+          "cachedResultUrl": "https://example.com/resource"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp\tErrorType\tAffectedJobID\tDetails\tResolution\tNotifiedManager\tDateResolved",
+              "displayName": "Timestamp\tErrorType\tAffectedJobID\tDetails\tResolution\tNotifiedManager\tDateResolved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ErrorType",
+              "displayName": "ErrorType",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "AffectedJobID",
+              "displayName": "AffectedJobID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Details",
+              "displayName": "Details",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Resolution",
+              "displayName": "Resolution",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "NotifiedManager",
+              "displayName": "NotifiedManager",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "DateResolved",
+              "displayName": "DateResolved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "csv_jobId",
+              "displayName": "csv_jobId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "csv_customerName",
+              "displayName": "csv_customerName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "csv_priority",
+              "displayName": "csv_priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "csv_status",
+              "displayName": "csv_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "weather_rainProbability",
+              "displayName": "weather_rainProbability",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "weather_error_type",
+              "displayName": "weather_error_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "0c787936-a08b-4b0e-bf99-e43b91810409",
+      "name": "Log_Issues_WeatherError",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        384,
+        2112
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AS8TNAEGP",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "text": "=:cloud_with_lightning_and_rain: *WEATHER API ALERT*\n\nError Type: {{ $json.weather_error_type }}\nJob ID: {{ $json.csv_jobId }}\nZip Code: {{ $json.csv_zipCode }}\nDetails: {{ $json.Details }}\n\nFallback forecast applied (50% rain probability). Customer notification will proceed with conservative estimate.",
+        "otherOptions": {}
+      },
+      "id": "a5d3f08e-0977-4938-b062-785342ed076b",
+      "name": "Slack_Alert_WeatherError",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        608,
+        2112
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "cond-rain-high",
+                    "leftValue": "={{ $json.weather_rainProbability }}",
+                    "rightValue": 60,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gt"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "779db729-ef27-4eeb-ad5d-0add15412cc3",
+      "name": "Switch_WeatherRisk_Scheduled",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        832,
+        2256
+      ],
+      "notes": "PURPOSE: Route to Delay Warning branch if rain >60%, Clear Weather branch otherwise.\nINPUT: Job record with weather_rainProbability (0-100).\nOUTPUT: output[0] = rain >60% (delay branch), output[1] = fallback (clear weather branch).\nCONFIG: Threshold = 60%. Adjust here if business requires different threshold.\nERRORS: N/A"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "cond-urgent-nonscheduled",
+                    "leftValue": "={{ $json.csv_priority }}",
+                    "rightValue": "Urgent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 1
+        }
+      },
+      "id": "a96b50f3-8f93-4fc8-8b64-2d00df4b25c4",
+      "name": "Switch_Priority_NonScheduled",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1184,
+        2544
+      ],
+      "notes": "PURPOSE: For non-Scheduled jobs, route Urgent to Email+Slack, Standard to Email only.\nINPUT: Normalized job record with csv_priority.\nOUTPUT: output[0] = Urgent, output[1] = Standard (fallback).\nCONFIG: None.\nERRORS: N/A"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.csv_customerEmail }}",
+        "subject": "=URGENT \u2014 HighPoint Trades Job Update: {{ $json.csv_jobId }}",
+        "message": "=<html><body style=\"font-family: Arial, sans-serif; color: #333;\"><h2 style=\"color: #C0392B;\">URGENT Job Status Update</h2><p>Dear {{ $json.csv_customerName }},</p><p>This is a priority notification regarding your <strong>{{ $json.csv_jobType }}</strong> project.</p><table style=\"border-collapse: collapse; width: 100%;\"><tr><td style=\"padding: 8px; border: 1px solid #ddd;\"><strong>Job ID</strong></td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $json.csv_jobId }}</td></tr><tr><td style=\"padding: 8px; border: 1px solid #ddd;\"><strong>Priority</strong></td><td style=\"padding: 8px; border: 1px solid #ddd;\">URGENT</td></tr><tr><td style=\"padding: 8px; border: 1px solid #ddd;\"><strong>Current Status</strong></td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $json.csv_status }}</td></tr></table><p>Our team will contact you within the hour. For immediate assistance, call (555) 123-4567.</p><p>Best regards,<br><strong>HighPoint Trades Operations Team</strong></p></body></html>",
+        "options": {}
+      },
+      "id": "9516d4e7-c936-4b28-b0c7-c990194bf084",
+      "name": "Email_CustomerConfirmation_Urgent",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -960,
+        2544
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "="
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "51dc2739-9f48-460f-8e6e-9f4aabc06fac",
+      "name": "Slack_CrewAlert_Urgent_NonScheduled",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -736,
+        2544
+      ],
+      "continueOnFail": true,
+      "notes": "PURPOSE: Send Slack webhook alert for Urgent non-Scheduled jobs. Uses SLACK_WEBHOOK_URL env var.\nINPUT: Job record with csv_priority=Urgent.\nOUTPUT: Slack message in #field-crew-alerts.\nCONFIG: Set SLACK_WEBHOOK_URL environment variable. retry=3, delay=2s.\nERRORS: continueOnFail + retry logic covers Error Type 4 (webhook failure)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-slack-fail-nonscheduled",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d349716a-d3e5-43bc-8ec3-cb36016438cd",
+      "name": "IF_SlackFailed_NonScheduled",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -512,
+        2544
+      ],
+      "notes": "PURPOSE: Detect Slack webhook failure after all retries. Routes to error logging if failed.\nINPUT: HTTP response from Slack webhook.\nOUTPUT: TRUE = failure (log it), FALSE = success.\nCONFIG: None.\nERRORS: N/A"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error Type 4: Slack/Discord Webhook Failure\n// All retries exhausted \u2014 log to Issues sheet\nreturn $input.all().map(item => ({\n  json: {\n    Timestamp: new Date().toISOString(),\n    ErrorType: 'SlackWebhookFailure',\n    AffectedJobID: item.json.csv_jobId || 'unknown',\n    Details: `Slack webhook failed after 3 retries. HTTP status: ${item.json.statusCode || 'N/A'}. Job: ${item.json.csv_jobId}`,\n    Resolution: 'Manager escalated. Check SLACK_WEBHOOK_URL environment variable.',\n    NotifiedManager: 'Y',\n    DateResolved: ''\n  }\n}));"
+      },
+      "id": "525d9b87-1917-48e9-9859-e48cb640dbd1",
+      "name": "Code_PrepareLog_SlackFailure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        2544
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Issues",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp\tErrorType\tAffectedJobID\tDetails\tResolution\tNotifiedManager\tDateResolved",
+              "displayName": "Timestamp\tErrorType\tAffectedJobID\tDetails\tResolution\tNotifiedManager\tDateResolved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ErrorType",
+              "displayName": "ErrorType",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "AffectedJobID",
+              "displayName": "AffectedJobID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Details",
+              "displayName": "Details",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Resolution",
+              "displayName": "Resolution",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "NotifiedManager",
+              "displayName": "NotifiedManager",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "DateResolved",
+              "displayName": "DateResolved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "csv_jobId",
+              "displayName": "csv_jobId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "csv_customerName",
+              "displayName": "csv_customerName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "csv_priority",
+              "displayName": "csv_priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "csv_status",
+              "displayName": "csv_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "weather_rainProbability",
+              "displayName": "weather_rainProbability",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "weather_error_type",
+              "displayName": "weather_error_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "5cf9e8e9-98d9-4964-8296-2a705f318f3b",
+      "name": "Log_Issues_SlackFailure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -64,
+        2544
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "cond-urgent-rain",
+                    "leftValue": "={{ $json.csv_priority }}",
+                    "rightValue": "Urgent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 1
+        }
+      },
+      "id": "6cf1e30f-6f0b-4d50-93f8-05c71a014371",
+      "name": "Switch_Priority_RainDelay",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1056,
+        2256
+      ],
+      "notes": "PURPOSE: Route rain delay jobs by priority. Urgent gets Email+Slack Delay Alert, Standard gets Email only.\nINPUT: Job record with rain >60% and Scheduled status.\nOUTPUT: output[0] = Urgent delay, output[1] = Standard delay.\nCONFIG: None.\nERRORS: N/A"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.csv_customerEmail }}",
+        "subject": "=URGENT \u2014 Weather Delay Notice: {{ $json.csv_jobId }} \u2014 HighPoint Trades",
+        "message": "=<html><body style=\"font-family: Arial, sans-serif; color: #333;\"><h2 style=\"color: #E67E22;\">Weather Caution \u2014 Rescheduling May Be Required</h2><p>Dear {{ $json.csv_customerName }},</p><p>Our weather monitoring system has flagged a potential issue for your <strong>{{ $json.csv_jobType }}</strong> installation.</p><table style=\"border-collapse: collapse; width: 100%;\"><tr><td style=\"padding: 8px; border: 1px solid #ddd; background:#fff3cd;\"><strong>Job ID</strong></td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $json.csv_jobId }}</td></tr><tr><td style=\"padding: 8px; border: 1px solid #ddd; background:#fff3cd;\"><strong>Weather Alert</strong></td><td style=\"padding: 8px; border: 1px solid #ddd; color:#C0392B;\"><strong>{{ $json.weather_rainProbability }}% rain probability</strong></td></tr><tr><td style=\"padding: 8px; border: 1px solid #ddd; background:#fff3cd;\"><strong>Condition</strong></td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $json.weather_condition }}</td></tr><tr><td style=\"padding: 8px; border: 1px solid #ddd; background:#fff3cd;\"><strong>Priority</strong></td><td style=\"padding: 8px; border: 1px solid #ddd;\">URGENT \u2014 We will contact you within 2 hours</td></tr></table><p>Our operations team is actively monitoring the forecast. We will contact you within 2 hours to confirm or reschedule. For immediate assistance: (555) 123-4567.</p><p>We apologize for any inconvenience and appreciate your patience.</p><p>Best regards,<br><strong>HighPoint Trades Operations Team</strong></p></body></html>",
+        "options": {}
+      },
+      "id": "e59e36d0-44c0-4e27-a402-64d756a99f94",
+      "name": "Email_WeatherCaution_Urgent",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1280,
+        2256
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "=:umbrella: *DELAY ALERT \u2014 CREW STANDBY \u2014 URGENT JOB {{ $json.csv_jobId }}*\n\nCustomer: {{ $json.csv_customerName }}\nJob Type: {{ $json.csv_jobType }}\nLocation Zip: {{ $json.effective_zip }}\nRain Probability: {{ $json.weather_rainProbability }}%\nWeather Condition: {{ $json.weather_condition }}\n\nCREW STANDBY \u2014 Do not dispatch until weather cleared or manager confirms reschedule.\nCustomer delay email sent."
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "0493e477-0a42-4e8f-9b53-4cef3a4703fc",
+      "name": "Slack_DelayAlert_RainDelay_Urgent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1504,
+        2256
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "id": "9e225e2f-72fd-42c7-a498-a047e3a7560d",
+      "name": "Wait_RateLimit_WeatherAPI",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -736,
+        2192
+      ],
+      "notes": "PURPOSE: Enforce 1-second delay between sequential weather API calls to prevent hitting the 60 req/min rate limit.\nINPUT: Job record about to hit the weather API.\nOUTPUT: Same record after 1-second pause.\nCONFIG: Adjust amount for stricter rate limiting if needed.\nERRORS: N/A"
+    }
+  ],
+  "connections": {
+    "Code_PrepareLog_SlackFailure1": {
+      "main": [
+        [
+          {
+            "node": "Log_Issues_SlackFailure1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait_RateLimit_WeatherAPI1": {
+      "main": [
+        []
+      ]
+    },
+    "Trigger_GoogleSheets_Poll": {
+      "main": [
+        [
+          {
+            "node": "Code_ValidateAndNormalize_Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code_ValidateAndNormalize_Input": {
+      "main": [
+        [
+          {
+            "node": "IF_MissingEmail_Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_MissingEmail_Check": {
+      "main": [
+        [
+          {
+            "node": "Code_PrepareLog_MissingEmail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF_StatusIsScheduled_WeatherCheck",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code_PrepareLog_MissingEmail": {
+      "main": [
+        [
+          {
+            "node": "Log_Issues_MissingEmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log_Issues_MissingEmail": {
+      "main": [
+        [
+          {
+            "node": "Slack_Alert_MissingEmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_StatusIsScheduled_WeatherCheck": {
+      "main": [
+        [
+          {
+            "node": "Code_CheckWeatherCache_3hrTTL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Switch_Priority_NonScheduled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code_CheckWeatherCache_3hrTTL": {
+      "main": [
+        [
+          {
+            "node": "IF_WeatherCacheHit_SkipAPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_WeatherCacheHit_SkipAPI": {
+      "main": [
+        [
+          {
+            "node": "Switch_WeatherRisk_Scheduled",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait_RateLimit_WeatherAPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait_RateLimit_WeatherAPI": {
+      "main": [
+        [
+          {
+            "node": "API_OpenWeatherMap_RainCheck",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API_OpenWeatherMap_RainCheck": {
+      "main": [
+        [
+          {
+            "node": "Code_ParseWeather_RainProbability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code_ParseWeather_RainProbability": {
+      "main": [
+        [
+          {
+            "node": "IF_WeatherAPIError_LogAndContinue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_WeatherAPIError_LogAndContinue": {
+      "main": [
+        [
+          {
+            "node": "Code_PrepareLog_WeatherError",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Switch_WeatherRisk_Scheduled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code_PrepareLog_WeatherError": {
+      "main": [
+        [
+          {
+            "node": "Log_Issues_WeatherError",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log_Issues_WeatherError": {
+      "main": [
+        [
+          {
+            "node": "Slack_Alert_WeatherError",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack_Alert_WeatherError": {
+      "main": [
+        [
+          {
+            "node": "Switch_WeatherRisk_Scheduled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch_WeatherRisk_Scheduled": {
+      "main": [
+        [
+          {
+            "node": "Switch_Priority_RainDelay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch_Priority_RainDelay": {
+      "main": [
+        [
+          {
+            "node": "Email_WeatherCaution_Urgent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email_WeatherCaution_Urgent": {
+      "main": [
+        [
+          {
+            "node": "Slack_DelayAlert_RainDelay_Urgent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch_Priority_NonScheduled": {
+      "main": [
+        [
+          {
+            "node": "Email_CustomerConfirmation_Urgent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email_CustomerConfirmation_Urgent": {
+      "main": [
+        [
+          {
+            "node": "Slack_CrewAlert_Urgent_NonScheduled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack_CrewAlert_Urgent_NonScheduled": {
+      "main": [
+        [
+          {
+            "node": "IF_SlackFailed_NonScheduled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_SlackFailed_NonScheduled": {
+      "main": [
+        [
+          {
+            "node": "Code_PrepareLog_SlackFailure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code_PrepareLog_SlackFailure": {
+      "main": [
+        [
+          {
+            "node": "Log_Issues_SlackFailure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-04-30T16:55:00.814Z",
+      "createdAt": "2026-04-30T16:55:00.814Z",
+      "id": "4bIiv3qcd6sxZAkc",
+      "name": "highpoint-trades"
+    },
+    {
+      "updatedAt": "2026-04-30T16:55:00.801Z",
+      "createdAt": "2026-04-30T16:55:00.801Z",
+      "id": "8Na6MtPwiHpOKXpe",
+      "name": "job-monitoring"
+    },
+    {
+      "updatedAt": "2026-04-30T16:55:00.798Z",
+      "createdAt": "2026-04-30T16:55:00.798Z",
+      "id": "mNhM1qFAk5wGl7oh",
+      "name": "weather-integration"
+    }
+  ]
+}

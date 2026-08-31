@@ -1,0 +1,600 @@
+{
+  "name": "Peak Performance Prep - SAT Diagnostic Lead Capture",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "peak-performance-diagnostic",
+        "options": {}
+      },
+      "id": "e026b6a3-68a5-419a-b99b-314942c82222",
+      "name": "Webhook - Form Submission",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate the diagnostic submission, normalize fields, and compute\n// derived values (submittedAt ISO, testDate default, scorePercentile).\n//\n// Single CONFIG map at the top \u2014 the score-tier thresholds and\n// percentile lookups MUST live ONLY here. The data-flow-integrity\n// spec asserts these values do not appear elsewhere in the workflow.\nconst CONFIG = {\n  // Static fallback tier-from-score lookup. Used when OpenRouter is\n  // unreachable. Keep deterministic so tests are stable.\n  satTierThresholds: [\n    { min: 1500, max: 1600, tier: 'Elite' },\n    { min: 1350, max: 1499, tier: 'Advanced' },\n    { min: 1200, max: 1349, tier: 'Intermediate' },\n    { min: 400,  max: 1199, tier: 'Foundations' }\n  ],\n  actTierThresholds: [\n    { min: 33, max: 36, tier: 'Elite' },\n    { min: 28, max: 32, tier: 'Advanced' },\n    { min: 22, max: 27, tier: 'Intermediate' },\n    { min: 1,  max: 21, tier: 'Foundations' }\n  ],\n  // Approximate percentile lookup tables (documented in setup-guide.md).\n  // Values are interpolated linearly between anchors.\n  satPercentileAnchors: [\n    { score: 1600, pct: 99 },\n    { score: 1500, pct: 98 },\n    { score: 1400, pct: 94 },\n    { score: 1300, pct: 87 },\n    { score: 1200, pct: 74 },\n    { score: 1100, pct: 56 },\n    { score: 1000, pct: 39 },\n    { score: 900,  pct: 25 },\n    { score: 800,  pct: 14 },\n    { score: 400,  pct: 1 }\n  ],\n  actPercentileAnchors: [\n    { score: 36, pct: 99 },\n    { score: 33, pct: 98 },\n    { score: 30, pct: 93 },\n    { score: 26, pct: 82 },\n    { score: 22, pct: 64 },\n    { score: 18, pct: 38 },\n    { score: 14, pct: 13 },\n    { score: 1,  pct: 1 }\n  ],\n  satRange: { min: 400, max: 1600 },\n  actRange: { min: 1, max: 36 },\n  validTestTypes: ['SAT', 'ACT']\n};\n\nfunction trimStr(v) { return typeof v === 'string' ? v.trim() : (v == null ? '' : String(v).trim()); }\nfunction lcEmail(v) { return trimStr(v).toLowerCase(); }\nfunction isEmail(s) { return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(s || '').trim()); }\nfunction isYmd(s)   { return /^\\d{4}-\\d{2}-\\d{2}$/.test(String(s || '').trim()); }\n\nfunction percentileFromAnchors(score, anchors) {\n  // anchors are sorted high -> low. Linear interpolation between brackets.\n  const sorted = anchors.slice().sort((a, b) => b.score - a.score);\n  if (score >= sorted[0].score) return sorted[0].pct;\n  if (score <= sorted[sorted.length - 1].score) return sorted[sorted.length - 1].pct;\n  for (let i = 0; i < sorted.length - 1; i++) {\n    const hi = sorted[i];\n    const lo = sorted[i + 1];\n    if (score <= hi.score && score >= lo.score) {\n      const span = hi.score - lo.score;\n      const ratio = span === 0 ? 0 : (score - lo.score) / span;\n      const pct = lo.pct + (hi.pct - lo.pct) * ratio;\n      return Math.round(pct);\n    }\n  }\n  return 1;\n}\n\nfunction tierFromThresholds(score, thresholds) {\n  for (const t of thresholds) {\n    if (score >= t.min && score <= t.max) return t.tier;\n  }\n  return 'Foundations';\n}\n\nconst items = $input.all();\nconst out = [];\n\nfor (const it of items) {\n  const j = it.json || {};\n  const src = (j.body && typeof j.body === 'object') ? j.body : j;\n\n  // Accept multiple casings (Google Forms variant uses different keys)\n  const studentName = trimStr(src.studentName ?? src.StudentName ?? src.student_name ?? src['Student Name']);\n  const parentEmailRaw = trimStr(src.parentEmail ?? src.ParentEmail ?? src.parent_email ?? src['Parent Email']);\n  const parentEmail = lcEmail(parentEmailRaw);\n  const testTypeRaw = trimStr(src.testType ?? src.TestType ?? src.test_type ?? src['Test Type']);\n  const testType = testTypeRaw.toUpperCase();\n  const diagnosticScoreRaw = src.diagnosticScore ?? src.DiagnosticScore ?? src.diagnostic_score ?? src['Diagnostic Score'];\n  const diagnosticScore = Number(diagnosticScoreRaw);\n  const phone = trimStr(src.phone ?? src.Phone);\n  const studentGradeLevel = trimStr(src.studentGradeLevel ?? src.gradeLevel ?? src.GradeLevel ?? src['Grade Level']);\n  const notes = trimStr(src.notes ?? src.Notes);\n  const testDateRaw = trimStr(src.testDate ?? src.TestDate ?? src['Test Date']);\n\n  const errors = [];\n  if (!studentName) errors.push('studentName is required');\n  if (!parentEmailRaw) errors.push('parentEmail is required');\n  else if (!isEmail(parentEmail)) errors.push('parentEmail is not a valid email address');\n  if (!testTypeRaw) errors.push('testType is required');\n  else if (!CONFIG.validTestTypes.includes(testType)) errors.push(`testType must be SAT or ACT (got: ${testTypeRaw})`);\n  if (diagnosticScoreRaw === undefined || diagnosticScoreRaw === null || diagnosticScoreRaw === '') {\n    errors.push('diagnosticScore is required');\n  } else if (!Number.isFinite(diagnosticScore)) {\n    errors.push('diagnosticScore must be a number');\n  } else if (testType === 'SAT' && (diagnosticScore < CONFIG.satRange.min || diagnosticScore > CONFIG.satRange.max)) {\n    errors.push(`diagnosticScore for SAT must be between ${CONFIG.satRange.min} and ${CONFIG.satRange.max} (got: ${diagnosticScore})`);\n  } else if (testType === 'ACT' && (diagnosticScore < CONFIG.actRange.min || diagnosticScore > CONFIG.actRange.max)) {\n    errors.push(`diagnosticScore for ACT must be between ${CONFIG.actRange.min} and ${CONFIG.actRange.max} (got: ${diagnosticScore})`);\n  }\n\n  const submittedAt = new Date().toISOString();\n  const todayYmd = submittedAt.slice(0, 10);\n  const testDate = isYmd(testDateRaw) ? testDateRaw : todayYmd;\n\n  if (errors.length > 0) {\n    out.push({ json: {\n      studentName, parentEmail, testType, testTypeRaw,\n      diagnosticScore: Number.isFinite(diagnosticScore) ? diagnosticScore : null,\n      phone, studentGradeLevel, notes,\n      testDate, submittedAt,\n      scorePercentile: null,\n      _error: true, _errors: errors, _reason: errors.join('; '),\n      _nodeName: 'Code - Validate & Normalize'\n    }});\n    continue;\n  }\n\n  const anchors = testType === 'SAT' ? CONFIG.satPercentileAnchors : CONFIG.actPercentileAnchors;\n  const thresholds = testType === 'SAT' ? CONFIG.satTierThresholds : CONFIG.actTierThresholds;\n  const scorePercentile = percentileFromAnchors(diagnosticScore, anchors);\n  const fallbackTier = tierFromThresholds(diagnosticScore, thresholds);\n\n  out.push({ json: {\n    studentName,\n    parentEmail,\n    testType,\n    diagnosticScore,\n    phone,\n    studentGradeLevel,\n    notes,\n    testDate,\n    submittedAt,\n    scorePercentile,\n    fallbackTier,\n    _error: false, _errors: [], _reason: ''\n  }});\n}\n\nreturn out;"
+      },
+      "id": "de9c75af-78ab-4550-a80f-8ddc36d9d0e7",
+      "name": "Code - Validate & Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "if-valid",
+              "leftValue": "={{ $json._error }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "50662181-8cb7-4824-a3c1-f347ffe76456",
+      "name": "IF - Validation Passed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://peakperformanceprep.example.com"
+            },
+            {
+              "name": "X-Title",
+              "value": "Peak Performance Prep - SAT Diagnostic Lead Capture"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'openai/gpt-4o-mini', temperature: 0.3, max_tokens: 360, response_format: { type: 'json_object' }, messages: [ { role: 'system', content: 'You are a tutoring intake assistant for Peak Performance Prep, an SAT/ACT prep center. Given a student diagnostic submission, return STRICT JSON: {\"tier\":\"Foundations\"|\"Intermediate\"|\"Advanced\"|\"Elite\",\"rationale\":\"one sentence\",\"parentParagraph\":\"2-3 warm professional sentences addressed to the parent acknowledging the score and next steps\"}. Tier guidance: SAT 400-1199=Foundations, 1200-1349=Intermediate, 1350-1499=Advanced, 1500-1600=Elite. ACT 1-21=Foundations, 22-27=Intermediate, 28-32=Advanced, 33-36=Elite. Keep parentParagraph encouraging and specific to the score.' }, { role: 'user', content: 'Student: ' + $json.studentName + '\\nTest: ' + $json.testType + '\\nDiagnostic score: ' + $json.diagnosticScore + '\\nPercentile (approx): ' + $json.scorePercentile } ] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "97543e2b-9bcd-4e93-afff-37d6bf6d9c2d",
+      "name": "HTTP - OpenRouter Tier Classification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -432,
+        192
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge the AI tier/rationale/parentParagraph onto the validated\n// submission. Falls back to the deterministic threshold map +\n// generic warm acknowledgment when OpenRouter fails or returns\n// malformed JSON. Always returns a usable record.\nfunction genericParentParagraph(studentName, testType, diagnosticScore) {\n  return `Thank you for submitting ${studentName}'s ${testType} diagnostic results. We've received the score of ${diagnosticScore} and a member of our tutoring team will review the placement and reach out shortly to schedule a consultation. We look forward to partnering with your family on this prep journey.`;\n}\n\nconst validated = $('Code - Validate & Normalize').item.json;\nconst ai = $input.first().json;\n\nlet tier = '';\nlet rationale = '';\nlet parentParagraph = '';\nlet aiUsed = false;\nlet aiError = '';\nconst VALID_TIERS = ['Foundations', 'Intermediate', 'Advanced', 'Elite'];\n\ntry {\n  const raw = ai && ai.choices && ai.choices[0] && ai.choices[0].message && ai.choices[0].message.content;\n  if (raw) {\n    let parsed;\n    try { parsed = JSON.parse(raw); } catch (e) {\n      const m = String(raw).match(/\\{[\\s\\S]*\\}/);\n      if (m) parsed = JSON.parse(m[0]);\n    }\n    if (parsed && typeof parsed === 'object') {\n      const tierCandidate = String(parsed.tier || '').trim();\n      const rationaleCandidate = String(parsed.rationale || '').trim();\n      const paragraphCandidate = String(parsed.parentParagraph || '').trim();\n      if (VALID_TIERS.includes(tierCandidate) && rationaleCandidate.length > 0 && paragraphCandidate.length > 0) {\n        tier = tierCandidate;\n        rationale = rationaleCandidate;\n        parentParagraph = paragraphCandidate;\n        aiUsed = true;\n      }\n    }\n  }\n  if (ai && ai.error) aiError = String(ai.error.message || ai.error);\n} catch (e) {\n  aiError = String(e && e.message || e);\n}\n\nif (!aiUsed) {\n  tier = validated.fallbackTier || 'Foundations';\n  rationale = 'Tier assigned based on score range.';\n  parentParagraph = genericParentParagraph(validated.studentName, validated.testType, validated.diagnosticScore);\n}\n\nreturn [{ json: {\n  ...validated,\n  tier,\n  rationale,\n  parentParagraph,\n  aiUsed,\n  aiError\n} }];"
+      },
+      "id": "2cfde6e2-e7b6-41e8-8cb0-2b6522916691",
+      "name": "Code - Merge AI Classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource",
+          "cachedResultUrl": "https://example.com/resource"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Student Name": "={{ $json.studentName }}",
+            "Parent Email": "={{ $json.parentEmail }}",
+            "Test Type": "={{ $json.testType }}",
+            "Diagnostic Score": "={{ $json.diagnosticScore }}",
+            "Score Percentile": "={{ $json.scorePercentile }}",
+            "Recommended Tier": "={{ $json.tier }}",
+            "AI Rationale": "={{ $json.rationale }}",
+            "Test Date": "={{ $json.testDate }}",
+            "Submitted At": "={{ $json.submittedAt }}",
+            "Phone": "={{ $json.phone }}",
+            "Grade Level": "={{ $json.studentGradeLevel }}",
+            "Status": "new"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Student Name",
+              "displayName": "Student Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false
+            },
+            {
+              "id": "Parent Email",
+              "displayName": "Parent Email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false
+            },
+            {
+              "id": "Test Type",
+              "displayName": "Test Type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "SAT",
+                  "value": "SAT"
+                },
+                {
+                  "name": "ACT",
+                  "value": "ACT"
+                }
+              ],
+              "readOnly": false
+            },
+            {
+              "id": "Diagnostic Score",
+              "displayName": "Diagnostic Score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false
+            },
+            {
+              "id": "Score Percentile",
+              "displayName": "Score Percentile",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false
+            },
+            {
+              "id": "Recommended Tier",
+              "displayName": "Recommended Tier",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Elite",
+                  "value": "Elite"
+                },
+                {
+                  "name": "Advanced",
+                  "value": "Advanced"
+                },
+                {
+                  "name": "Intermediate",
+                  "value": "Intermediate"
+                },
+                {
+                  "name": "Foundations",
+                  "value": "Foundations"
+                }
+              ],
+              "readOnly": false
+            },
+            {
+              "id": "AI Rationale",
+              "displayName": "AI Rationale",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false
+            },
+            {
+              "id": "Test Date",
+              "displayName": "Test Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false
+            },
+            {
+              "id": "Submitted At",
+              "displayName": "Submitted At",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false
+            },
+            {
+              "id": "Grade Level",
+              "displayName": "Grade Level",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "new",
+                  "value": "new"
+                },
+                {
+                  "name": "contacted",
+                  "value": "contacted"
+                },
+                {
+                  "name": "scheduled",
+                  "value": "scheduled"
+                }
+              ],
+              "readOnly": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "a4c9ef62-ce5e-485f-a23a-0c06b2840035",
+      "name": "Airtable - Create Lead Record",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        16,
+        0
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "portfolio@example.com",
+        "subject": "=[New Diagnostic] {{ $json.studentName }} - {{ $json.testType }} {{ $json.diagnosticScore }}",
+        "message": "=<p><strong>New diagnostic submission received</strong></p><p>Student: <strong>{{ $json.studentName }}</strong><br>Test: <strong>{{ $json.testType }}</strong><br>Diagnostic Score: <strong>{{ $json.diagnosticScore }}</strong> (approx {{ $json.scorePercentile }}th percentile)<br>Recommended Tier: <strong>{{ $json.tier }}</strong></p><p><em>AI Rationale:</em> {{ $json.rationale }}</p><p>Parent Email: {{ $json.parentEmail }}<br>Phone: {{ $json.phone }}<br>Grade Level: {{ $json.studentGradeLevel }}<br>Test Date: {{ $json.testDate }}<br>Submitted: {{ $json.submittedAt }}</p><p>Notes: {{ $json.notes }}</p><p>Airtable record: <a href=\"https://airtable.com/YOUR_AIRTABLE_BASE_ID/YOUR_AIRTABLE_TABLE_ID\">Open lead in Airtable</a></p><p>-- Peak Performance Prep Automation</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "22fc7888-dc0c-4d82-84de-90ff0c41b59e",
+      "name": "Gmail - Internal Tutor Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        16,
+        192
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.parentEmail }}",
+        "subject": "We received your diagnostic results - Peak Performance Prep",
+        "message": "=<p>Dear Parent,</p><p>{{ $json.parentParagraph }}</p><p>Diagnostic snapshot:<br>Student: <strong>{{ $json.studentName }}</strong><br>Test: <strong>{{ $json.testType }}</strong><br>Diagnostic Score: <strong>{{ $json.diagnosticScore }}</strong> (approx {{ $json.scorePercentile }}th percentile)</p><p>You can schedule your consultation here: <a href=\"https://peakperformanceprep.com/schedule/{{ $json.studentName.toLowerCase().replace(/\\s+/g, '-') }}\">https://peakperformanceprep.com/schedule/{{ $json.studentName.toLowerCase().replace(/\\s+/g, '-') }}</a></p><p>Warm regards,<br>The Peak Performance Prep Tutoring Team<br>(555) 010-PREP &middot; hello@peakperformanceprep.com</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "baae0f40-4977-4c22-be98-a2ea13d9a968",
+      "name": "Gmail - Parent Confirmation",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        16,
+        384
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AUM4VD00Y",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "text": "=:warning: *Validation rejected diagnostic submission*\n\n*Student:* {{ $json.studentName || '(missing)' }}\n*Parent Email:* {{ $json.parentEmail || '(missing)' }}\n*Test Type:* {{ $json.testTypeRaw || $json.testType || '(missing)' }}\n*Diagnostic Score:* {{ $json.diagnosticScore == null ? '(missing)' : $json.diagnosticScore }}\n*Reason:* {{ $json._reason }}\n*Submitted At:* {{ $json.submittedAt }}\n\nNo Airtable record created. No emails sent.",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "7e121e7d-4a3c-4c97-bae7-94ccd94a517a",
+      "name": "Slack - Validation Rejection Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        -432,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AUM4VD00Y",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "text": "=:rotating_light: *DATA LOSS RISK - Airtable create failed but emails sent*\n\n*Student:* {{ $('Code - Merge AI Classification').item.json.studentName }}\n*Parent Email:* {{ $('Code - Merge AI Classification').item.json.parentEmail }}\n*Test:* {{ $('Code - Merge AI Classification').item.json.testType }} {{ $('Code - Merge AI Classification').item.json.diagnosticScore }}\n*Tier:* {{ $('Code - Merge AI Classification').item.json.tier }}\n*Failure:* {{ ($json.error && $json.error.message) || 'Airtable API error' }}\n\n*ACTION:* Manually create the Airtable record for this lead so it is not lost.",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "3084c938-e9c7-4216-a94e-633797ddaed0",
+      "name": "Slack - Airtable Data Loss Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AUM4VD00Y",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "text": "=:rotating_light: *NOTIFICATION FAILED - Tutor alert email did not send*\n\n*Student:* {{ $('Code - Merge AI Classification').item.json.studentName }}\n*Test:* {{ $('Code - Merge AI Classification').item.json.testType }} {{ $('Code - Merge AI Classification').item.json.diagnosticScore }}\n*Tier:* {{ $('Code - Merge AI Classification').item.json.tier }}\n*Failure:* {{ ($json.error && $json.error.message) || 'Gmail API error' }}\n\n*ACTION:* Manually notify the lead tutor.",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "d57540c1-62b6-41b6-a04c-ce623d68f4b8",
+      "name": "Slack - Tutor Email Failed Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        240,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AUM4VD00Y",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "text": "=:rotating_light: *NOTIFICATION FAILED - Parent confirmation email did not send*\n\n*Student:* {{ $('Code - Merge AI Classification').item.json.studentName }}\n*Parent Email:* {{ $('Code - Merge AI Classification').item.json.parentEmail }}\n*Test:* {{ $('Code - Merge AI Classification').item.json.testType }} {{ $('Code - Merge AI Classification').item.json.diagnosticScore }}\n*Failure:* {{ ($json.error && $json.error.message) || 'Gmail API error' }}\n\n*ACTION:* Manually email the parent.",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "cb0377b6-b093-4c38-b09d-29a467604062",
+      "name": "Slack - Parent Email Failed Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        240,
+        384
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Form Submission": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate & Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Validate & Normalize": {
+      "main": [
+        [
+          {
+            "node": "IF - Validation Passed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Validation Passed": {
+      "main": [
+        [
+          {
+            "node": "HTTP - OpenRouter Tier Classification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack - Validation Rejection Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - OpenRouter Tier Classification": {
+      "main": [
+        [
+          {
+            "node": "Code - Merge AI Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Merge AI Classification": {
+      "main": [
+        [
+          {
+            "node": "Airtable - Create Lead Record",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail - Internal Tutor Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail - Parent Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable - Create Lead Record": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Slack - Airtable Data Loss Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Internal Tutor Alert": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Slack - Tutor Email Failed Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Parent Confirmation": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Slack - Parent Email Failed Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-04-27T13:01:56.946Z",
+      "createdAt": "2026-04-27T13:01:56.946Z",
+      "id": "1XVkRiZ353m8dTu0",
+      "name": "peak-performance-prep"
+    },
+    {
+      "updatedAt": "2026-04-27T13:01:56.945Z",
+      "createdAt": "2026-04-27T13:01:56.945Z",
+      "id": "FRXKL73H6dxXYhdS",
+      "name": "sat-lead-capture"
+    },
+    {
+      "updatedAt": "2026-04-27T13:01:56.949Z",
+      "createdAt": "2026-04-27T13:01:56.949Z",
+      "id": "a2C89k8Q8r3sxQgd",
+      "name": "tutoring"
+    }
+  ]
+}

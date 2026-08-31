@@ -1,0 +1,301 @@
+{
+  "name": "Luxury Property Showing Synchronizer for The Gilded Key",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "id": "33562384-3c29-48e1-998b-73b8b4ab4cdb",
+      "name": "Google Sheets Trigger",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -688,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "ClientName",
+              "value": "={{ $json.ClientName }}"
+            },
+            {
+              "name": "Email",
+              "value": "={{ $json.Email }}"
+            },
+            {
+              "name": "PropertyAddress",
+              "value": "={{ $json.PropertyAddress }}"
+            },
+            {
+              "name": "RequestedDate",
+              "value": "={{ $json.RequestedDate }}"
+            },
+            {
+              "name": "RequestedTime",
+              "value": "={{ $json.RequestedTime }}"
+            },
+            {
+              "name": "SpecialRequests",
+              "value": "={{ $json.SpecialRequests }}"
+            },
+            {
+              "name": "startDateTime",
+              "value": "={{ $json.RequestedDate + \"T\" + $json.RequestedTime + \":00\" }}"
+            },
+            {
+              "name": "endDateTime",
+              "value": "={{ new Date(new Date($json.RequestedDate + \"T\" + $json.RequestedTime + \":00\").getTime() + 3600000).toISOString() }}"
+            }
+          ],
+          "number": [
+            {
+              "name": "PropertyPrice",
+              "value": "={{ Number($json.PropertyPrice) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "59838d1e-a4c9-4938-9b39-e9edbe44db3a",
+      "name": "Build Timestamps",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        -464,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.PropertyPrice }}",
+              "operation": "larger",
+              "value2": 1500000
+            }
+          ]
+        }
+      },
+      "id": "919fef98-5f4b-4c34-b3d3-3cad2098520d",
+      "name": "VIP Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "eventTitle",
+              "value": "={{ \"[VIP TOUR] \" + $json.PropertyAddress }}"
+            },
+            {
+              "name": "colorId",
+              "value": "11"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "141a8128-92a1-4236-84de-feec12b18f92",
+      "name": "VIP Label",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "eventTitle",
+              "value": "={{ \"[Showing] \" + $json.PropertyAddress }}"
+            },
+            {
+              "name": "colorId",
+              "value": "0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a945cc46-8c21-4fb7-89c1-d7c565a3567e",
+      "name": "Standard Label",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "start": "={{ $json.startDateTime }}",
+        "end": "={{ $json.endDateTime }}",
+        "additionalFields": {
+          "description": "=Client: {{ $json.ClientName }}\nEmail: {{ $json.Email }}\nSpecial Requests: {{ $json.SpecialRequests }}",
+          "location": "={{ $json.PropertyAddress }}",
+          "summary": "={{ $json.eventTitle }}"
+        }
+      },
+      "id": "3da3f82a-d6ff-4549-b641-18f2a7be6205",
+      "name": "Create VIP Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "start": "={{ $json.startDateTime }}",
+        "end": "={{ $json.endDateTime }}",
+        "additionalFields": {
+          "description": "=Client: {{ $json.ClientName }}\nEmail: {{ $json.Email }}\nSpecial Requests: {{ $json.SpecialRequests }}",
+          "location": "={{ $json.PropertyAddress }}",
+          "summary": "={{ $json.eventTitle }}"
+        }
+      },
+      "id": "465a53c9-b6b8-4ded-888e-23e7733b7270",
+      "name": "Create Standard Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        240,
+        240
+      ]
+    }
+  ],
+  "connections": {
+    "Google Sheets Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Timestamps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Timestamps": {
+      "main": [
+        [
+          {
+            "node": "VIP Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "VIP Check": {
+      "main": [
+        [
+          {
+            "node": "VIP Label",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Standard Label",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "VIP Label": {
+      "main": [
+        [
+          {
+            "node": "Create VIP Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Standard Label": {
+      "main": [
+        [
+          {
+            "node": "Create Standard Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-05-02T13:33:14.953Z",
+      "createdAt": "2026-05-02T13:33:14.953Z",
+      "id": "7i3Sw1omtnGXEdKK",
+      "name": "google-calendar"
+    },
+    {
+      "updatedAt": "2026-04-25T08:39:28.467Z",
+      "createdAt": "2026-04-25T08:39:28.467Z",
+      "id": "PcoVEMCcu3XoCxj2",
+      "name": "real-estate"
+    },
+    {
+      "updatedAt": "2026-05-02T13:33:14.949Z",
+      "createdAt": "2026-05-02T13:33:14.949Z",
+      "id": "ra9ca8TvsRKpYNut",
+      "name": "the-gilded-key"
+    }
+  ]
+}

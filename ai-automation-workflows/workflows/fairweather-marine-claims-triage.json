@@ -1,0 +1,594 @@
+{
+  "name": "Fairweather Marine - High-Value Claims Triage",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fairweather-claim-submission",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4a390af8-646b-4fe3-89d1-4f52de3114af",
+      "name": "Webhook - Claim Submission",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1328,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate & normalize a single claim submission.\n// - Coerces estimatedLoss to a Number (handles \"15000\", \"15,000\", \"$15,000\")\n// - Lowercases policyType for branch comparison\n// - Trims & strips all string fields\n// - Validates required fields (clientName, policyType, estimatedLoss, description, claimantEmail, claimDate)\n// - Computes priorityStatus (\"URGENT\" | \"STANDARD\") and isUrgent flag\n//   Urgent rule: estimatedLoss > 15000 OR policyType === \"commercial\"  (strictly > 15000)\n// - On validation failure, sets _error=true and routes a structured\n//   error object downstream (Webhook Response handles 400).\n\nconst REQUIRED = ['clientName', 'policyType', 'estimatedLoss', 'description', 'claimantEmail', 'claimDate'];\nconst URGENT_THRESHOLD = 15000;\nconst ALLOWED_POLICY_TYPES = ['private', 'commercial'];\n\nfunction toNumber(v) {\n  if (typeof v === 'number' && isFinite(v)) return v;\n  if (typeof v !== 'string') return NaN;\n  const cleaned = v.replace(/[$,\\s]/g, '');\n  if (cleaned === '' || /[^0-9.+-]/.test(cleaned)) return NaN;\n  const n = Number(cleaned);\n  return isFinite(n) ? n : NaN;\n}\n\nfunction trimStr(v) {\n  return typeof v === 'string' ? v.trim() : (v == null ? '' : String(v).trim());\n}\n\nfunction isEmail(s) {\n  return /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(String(s || '').trim());\n}\n\nfunction parseDate(raw) {\n  if (!raw) return '';\n  const d = new Date(raw);\n  if (isNaN(d.getTime())) return '';\n  return d.toISOString();\n}\n\nconst items = $input.all();\nconst out = [];\n\nfor (const it of items) {\n  // Webhook payload may be at j.body (form-encoded) OR top-level JSON\n  const j = it.json || {};\n  const src = (j.body && typeof j.body === 'object') ? j.body : j;\n\n  const clientName = trimStr(src.clientName ?? src.client_name ?? src.ClientName);\n  const policyTypeRaw = trimStr(src.policyType ?? src.policy_type ?? src.PolicyType);\n  const policyType = policyTypeRaw.toLowerCase();\n  const estimatedLossRaw = src.estimatedLoss ?? src.estimated_loss ?? src.EstimatedLoss;\n  const estimatedLoss = toNumber(estimatedLossRaw);\n  const description = trimStr(src.description ?? src.Description);\n  const claimantEmail = trimStr(src.claimantEmail ?? src.claimant_email ?? src.ClaimantEmail).toLowerCase();\n  const claimDateRaw = src.claimDate ?? src.claim_date ?? src.ClaimDate;\n  const claimDate = parseDate(claimDateRaw);\n\n  const errors = [];\n  if (!clientName) errors.push('clientName is required');\n  if (!policyTypeRaw) errors.push('policyType is required');\n  else if (!ALLOWED_POLICY_TYPES.includes(policyType)) errors.push(`policyType must be one of: ${ALLOWED_POLICY_TYPES.join(', ')}`);\n  if (!isFinite(estimatedLoss)) errors.push('estimatedLoss must be a number');\n  if (!description) errors.push('description is required');\n  if (!claimantEmail) errors.push('claimantEmail is required');\n  else if (!isEmail(claimantEmail)) errors.push('claimantEmail must be a valid email');\n  if (!claimDateRaw) errors.push('claimDate is required');\n  else if (!claimDate) errors.push('claimDate must be a parseable date');\n\n  const isUrgent = errors.length === 0 && (estimatedLoss > URGENT_THRESHOLD || policyType === 'commercial');\n  const priorityStatus = isUrgent ? 'URGENT' : 'STANDARD';\n\n  out.push({\n    json: {\n      clientName,\n      policyType,\n      policyTypeRaw,\n      estimatedLoss: isFinite(estimatedLoss) ? estimatedLoss : 0,\n      estimatedLossRaw: estimatedLossRaw == null ? '' : String(estimatedLossRaw),\n      description,\n      claimantEmail,\n      claimDate: claimDate || '',\n      submittedAt: new Date().toISOString(),\n      isUrgent,\n      priorityStatus,\n      _error: errors.length > 0,\n      _errors: errors,\n      _reason: errors.length > 0 ? errors.join('; ') : ''\n    }\n  });\n}\n\nreturn out;"
+      },
+      "id": "49eed003-0771-4b9a-8360-dae1ebbcecb6",
+      "name": "Code - Validate & Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "if-no-error",
+              "leftValue": "={{ $json._error }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "30a1fdc8-7b0a-40e5-8b36-d421a66e14ab",
+      "name": "IF - Input Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://fairweather-marine.example.com"
+            },
+            {
+              "name": "X-Title",
+              "value": "Fairweather Marine Claims Triage"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "string",
+        "body": "={{ JSON.stringify({ model: 'openai/gpt-4o-mini', temperature: 0.3, max_tokens: 220, response_format: { type: 'json_object' }, messages: [ { role: 'system', content: 'You are a claims triage assistant for Fairweather Marine & Specialty Insurance. Read the claim description and (a) classify it into exactly ONE category from this list: collision, storm_damage, theft, fire, mechanical, liability, other; (b) write ONE professional sentence (max 180 chars) summarizing the incident for the claims team. Return strict JSON: {\"category\": <one of the seven>, \"summary\": <one sentence>}. Nothing else.' }, { role: 'user', content: 'Client: ' + $json.clientName + '\\nPolicy type: ' + $json.policyType + '\\nEstimated loss: $' + $json.estimatedLoss + '\\nClaim date: ' + $json.claimDate + '\\nDescription:\\n' + $json.description } ] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "1f5d52de-2f82-4d91-ba73-dca1a06c7983",
+      "name": "HTTP - OpenRouter Classify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -656,
+        80
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge OpenRouter classification onto the validated claim record.\n// If OpenRouter failed (continueOnFail=true upstream) OR returned\n// malformed JSON, fall back to a deterministic category + summary so\n// the workflow always produces a Slack alert + Airtable record.\n\nconst CATEGORIES = ['collision', 'storm_damage', 'theft', 'fire', 'mechanical', 'liability', 'other'];\n\nfunction guessCategory(description) {\n  const s = String(description || '').toLowerCase();\n  if (/(collision|collid|crash|struck|impact|rear-end|rear end|hit )/.test(s)) return 'collision';\n  if (/(storm|hurricane|wind|wave|swell|surge|flood|lightning|hail|tropical)/.test(s)) return 'storm_damage';\n  if (/(theft|stolen|burglar|break.?in|robbery|robbed)/.test(s)) return 'theft';\n  if (/(fire|burn|smoke|combust|engine room fire)/.test(s)) return 'fire';\n  if (/(engine|mechanical|propeller|gearbox|transmission|electrical fail|hydraulic|leak |oil leak|pump fail)/.test(s)) return 'mechanical';\n  if (/(injur|liability|third.?party|passenger|crew member|bodily harm|negligence)/.test(s)) return 'liability';\n  return 'other';\n}\n\nfunction summarize(claim, category) {\n  const lossStr = '$' + Number(claim.estimatedLoss || 0).toLocaleString('en-US');\n  const cat = String(category || 'other').replace('_', ' ');\n  const desc = String(claim.description || '').replace(/\\s+/g, ' ').trim();\n  const snippet = desc.length > 100 ? desc.slice(0, 97) + '...' : desc;\n  return `${claim.policyType === 'commercial' ? 'Commercial' : 'Private'} ${cat} claim from ${claim.clientName} (${lossStr}): ${snippet}`.slice(0, 240);\n}\n\nconst ai = $input.first().json;\nconst claim = $('Code - Validate & Normalize').item.json;\n\nlet category = '';\nlet summary = '';\nlet aiUsed = false;\nlet aiError = '';\n\ntry {\n  const raw = ai && ai.choices && ai.choices[0] && ai.choices[0].message && ai.choices[0].message.content;\n  if (raw) {\n    let parsed;\n    try { parsed = JSON.parse(raw); } catch (e) {\n      const m = String(raw).match(/\\{[\\s\\S]*\\}/);\n      if (m) parsed = JSON.parse(m[0]);\n    }\n    if (parsed && typeof parsed === 'object') {\n      const c = String(parsed.category || '').toLowerCase().trim().replace(/\\s+/g, '_');\n      if (CATEGORIES.includes(c)) category = c;\n      if (typeof parsed.summary === 'string' && parsed.summary.trim().length >= 10) summary = parsed.summary.trim();\n    }\n    if (category && summary) aiUsed = true;\n  }\n  if (ai && ai.error) aiError = String(ai.error.message || ai.error);\n} catch (e) {\n  aiError = String(e && e.message || e);\n}\n\nif (!category) category = guessCategory(claim.description);\nif (!summary) summary = summarize(claim, category);\n\nreturn [{\n  json: {\n    ...claim,\n    category,\n    summary,\n    aiUsed,\n    aiError\n  }\n}];"
+      },
+      "id": "d803a2bb-097d-421a-9cbe-ab624ec01256",
+      "name": "Code - Merge AI Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "if-urgent",
+              "leftValue": "={{ $json.isUrgent }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ad3c5617-d70c-40a6-b032-682abab5b2a6",
+      "name": "IF - Urgent Triage",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ATZPCSBQU",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "text": "=:rotating_light: *URGENT High-Value Claim Submitted*\n\n*Estimated Loss: ${{ Number($json.estimatedLoss).toLocaleString('en-US') }}*\n\n*Client:* {{ $json.clientName }}\n*Policy Type:* {{ $json.policyType === 'commercial' ? 'Commercial' : 'Private' }}\n*Category:* {{ $json.category }}\n*Claim Date:* {{ $json.claimDate }}\n\n*AI Summary:* {{ $json.summary }}\n\nAn adjuster has been notified \u2014 initial response committed within 4 business hours.",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "bcadd5dd-1da9-49ca-a6d9-2d33a2522b21",
+      "name": "Slack - Notify Claims Alerts",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        16,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Code - Merge AI Result').item.json.claimantEmail }}",
+        "subject": "=Fairweather Marine - Immediate Action Taken on Your Claim",
+        "emailType": "text",
+        "message": "=Dear {{ $('Code - Merge AI Result').item.json.clientName }},\n\nThank you for submitting your claim to Fairweather Marine & Specialty Insurance. We have received your submission and, based on the value and nature of the loss, your claim has been flagged as a HIGH-PRIORITY matter.\n\nA dedicated claims adjuster will contact you within 4 business hours to begin the assessment process.\n\nYour claim summary:\n- Policy Type: {{ $('Code - Merge AI Result').item.json.policyType === 'commercial' ? 'Commercial' : 'Private' }}\n- Estimated Loss: ${{ Number($('Code - Merge AI Result').item.json.estimatedLoss).toLocaleString('en-US') }}\n- Category: {{ $('Code - Merge AI Result').item.json.category }}\n- Date of Loss: {{ $('Code - Merge AI Result').item.json.claimDate }}\n\nIf you have urgent supporting documentation (photographs, surveys, third-party reports), please reply directly to this email so it reaches the assigned adjuster immediately.\n\nWe appreciate your trust in Fairweather Marine.\n\nKind regards,\nThe Fairweather Marine Claims Team",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "09f15892-ed11-4e07-b62f-7dd63642cd89",
+      "name": "Gmail - Immediate Action Taken",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_TABLE_ID",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Client Name": "={{ $json.clientName }}",
+            "Policy Type": "={{ $json.policyType === 'commercial' ? 'Commercial' : 'Private' }}",
+            "Estimated Loss": "={{ $json.estimatedLoss }}",
+            "Description": "={{ $json.description }}",
+            "Category": "={{ $json.category }}",
+            "Summary": "={{ $json.summary }}",
+            "Priority Status": "={{ $json.priorityStatus }}",
+            "Claim Date": "={{ $json.claimDate }}",
+            "Submitted At": "={{ $json.submittedAt }}",
+            "Claimant Email": "={{ $json.claimantEmail }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Client Name",
+              "displayName": "Client Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Policy Type",
+              "displayName": "Policy Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Estimated Loss",
+              "displayName": "Estimated Loss",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Description",
+              "displayName": "Description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Priority Status",
+              "displayName": "Priority Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Claim Date",
+              "displayName": "Claim Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Submitted At",
+              "displayName": "Submitted At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Claimant Email",
+              "displayName": "Claimant Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "18bbdd3c-b184-4841-97b0-ddd7c5ace36a",
+      "name": "Airtable - Log Claim",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        464,
+        80
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "if-urgent-and-failed",
+              "leftValue": "={{ $('Code - Merge AI Result').item.json.isUrgent }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f603cdd1-d9d1-4b64-b2d7-0b1aee1c1463",
+      "name": "IF - Was Urgent And Storage Failed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        688,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ATZPCSBQU",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "text": "=:warning: *STORAGE FAILURE on URGENT claim*\n\nThe Airtable log failed but this urgent claim must NOT be lost.\n\n*Estimated Loss: ${{ Number($('Code - Merge AI Result').item.json.estimatedLoss).toLocaleString('en-US') }}*\n*Client:* {{ $('Code - Merge AI Result').item.json.clientName }}\n*Policy Type:* {{ $('Code - Merge AI Result').item.json.policyType === 'commercial' ? 'Commercial' : 'Private' }}\n*Category:* {{ $('Code - Merge AI Result').item.json.category }}\n*Claimant Email:* {{ $('Code - Merge AI Result').item.json.claimantEmail }}\n*Failure Reason:* {{ $json.error?.message || $json._reason || 'Airtable unreachable' }}\n\n*ACTION:* Manually capture this claim in Airtable.",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "9cfd75eb-7fea-41ed-b791-f7af33f29708",
+      "name": "Slack - Storage Failure Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        912,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'received', priorityStatus: $('Code - Merge AI Result').item.json.priorityStatus, category: $('Code - Merge AI Result').item.json.category, claimId: ($json.id || $json[0]?.id || null) }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "c25f6b49-651c-4edc-b20f-d2f45f736ad9",
+      "name": "Webhook Response - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1136,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'rejected', errors: $json._errors, reason: $json._reason }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "c6fe7e70-1dfe-4200-b25a-680047234e4b",
+      "name": "Webhook Response - Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -656,
+        272
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Claim Submission": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate & Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Validate & Normalize": {
+      "main": [
+        [
+          {
+            "node": "IF - Input Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Input Valid": {
+      "main": [
+        [
+          {
+            "node": "HTTP - OpenRouter Classify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Webhook Response - Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - OpenRouter Classify": {
+      "main": [
+        [
+          {
+            "node": "Code - Merge AI Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Merge AI Result": {
+      "main": [
+        [
+          {
+            "node": "IF - Urgent Triage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Urgent Triage": {
+      "main": [
+        [
+          {
+            "node": "Slack - Notify Claims Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Airtable - Log Claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Notify Claims Alerts": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Immediate Action Taken",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Immediate Action Taken": {
+      "main": [
+        [
+          {
+            "node": "Airtable - Log Claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable - Log Claim": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response - Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF - Was Urgent And Storage Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Was Urgent And Storage Failed": {
+      "main": [
+        [
+          {
+            "node": "Slack - Storage Failure Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Storage Failure Alert": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-04-27T07:14:27.720Z",
+      "createdAt": "2026-04-27T07:14:27.720Z",
+      "id": "6dincE3LZpfiBqrc",
+      "name": "fairweather-marine"
+    },
+    {
+      "updatedAt": "2026-04-27T07:14:27.723Z",
+      "createdAt": "2026-04-27T07:14:27.723Z",
+      "id": "Om808A0eMkXMoxS4",
+      "name": "claims-triage"
+    },
+    {
+      "updatedAt": "2026-04-21T08:13:01.514Z",
+      "createdAt": "2026-04-21T08:13:01.514Z",
+      "id": "zDQ4vYKl4EexwH2Y",
+      "name": "insurance"
+    }
+  ]
+}

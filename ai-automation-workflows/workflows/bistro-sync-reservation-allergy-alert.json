@@ -1,0 +1,336 @@
+{
+  "name": "Bistro Sync - Farm-to-Table Reservation and Allergy Alert Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "bistro-sync-reservation",
+        "options": {}
+      },
+      "id": "bd240e57-c119-4de7-8e75-bb97cea0c720",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Bistro Sync - Transform & Normalize\n// Handles single submission OR an array of submissions on $input.all()\n\nfunction toTitleCase(str) {\n  if (!str || typeof str !== 'string') return '';\n  return str\n    .toLowerCase()\n    .split(/\\s+/)\n    .filter(Boolean)\n    .map(w => w.charAt(0).toUpperCase() + w.slice(1))\n    .join(' ');\n}\n\nfunction formatTime12h(timeStr) {\n  if (!timeStr || typeof timeStr !== 'string') return '';\n  const parts = timeStr.split(':');\n  if (parts.length < 2) return timeStr;\n  let h = parseInt(parts[0], 10);\n  const m = parseInt(parts[1], 10);\n  if (isNaN(h) || isNaN(m)) return timeStr;\n  const period = h >= 12 ? 'PM' : 'AM';\n  h = h % 12;\n  if (h === 0) h = 12;\n  const mm = m.toString().padStart(2, '0');\n  return `${h}:${mm} ${period}`;\n}\n\nfunction hasAllergyFlag(restriction) {\n  if (!restriction || typeof restriction !== 'string') return false;\n  const r = restriction.toLowerCase();\n  if (r === 'none' || r === 'n/a' || r === 'null') return false;\n  return /allergy|celiac|anaphylactic/i.test(restriction);\n}\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  // Webhook may put parsed body under .body, or fields may be at top level.\n  const src = item.json.body && typeof item.json.body === 'object'\n    ? item.json.body\n    : item.json;\n\n  const rawGuest = src['Guest Name'] || src.guestName || src.guest_name || '';\n  const rawDate = src['Reservation Date'] || src.reservationDate || src.reservation_date || '';\n  const rawTime = src['Time'] || src.time || '';\n  const rawParty = src['Party Size'] || src.partySize || src.party_size || 0;\n  const rawTable = src['Table Number'] || src.tableNumber || src.table_number || '';\n  const rawDiet = src['Dietary Restrictions'] || src.dietaryRestrictions || src.dietary_restrictions || '';\n  const rawServer = src['Server Name'] || src.serverName || src.server_name || '';\n\n  const guestName = toTitleCase(String(rawGuest).trim());\n  const formattedTime = formatTime12h(String(rawTime).trim());\n  const dietary = String(rawDiet || '').trim();\n  const isAllergy = hasAllergyFlag(dietary);\n\n  out.push({\n    json: {\n      'Guest Name': guestName,\n      'Reservation Date': String(rawDate).trim(),\n      'Time': formattedTime,\n      'Time Raw': String(rawTime).trim(),\n      'Party Size': Number(rawParty) || 0,\n      'Table Number': String(rawTable).trim(),\n      'Dietary Restrictions': dietary || 'None',\n      'Server Name': toTitleCase(String(rawServer).trim()),\n      'Allergy Alert': isAllergy,\n      'Upsert Key': `${guestName}|${String(rawDate).trim()}|${String(rawTable).trim()}`\n    }\n  });\n}\n\nreturn out;\n"
+      },
+      "id": "364e7ead-6e95-4870-b286-c67bc4125357",
+      "name": "Transform & Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "allergy-flag-condition",
+              "leftValue": "={{ $json[\"Allergy Alert\"] }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1333423b-d221-4ba7-898d-f114e9e16fd9",
+      "name": "IF Allergy Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#kitchen-alerts",
+          "mode": "name"
+        },
+        "messageType": "block",
+        "blocksUi": "={{ JSON.stringify({ blocks: [\n  { type: 'header', text: { type: 'plain_text', text: ':rotating_light: ALLERGY ALERT :rotating_light:', emoji: true } },\n  { type: 'divider' },\n  { type: 'section', text: { type: 'mrkdwn', text: '*Critical dietary restriction flagged for incoming reservation.*' } },\n  { type: 'section', fields: [\n    { type: 'mrkdwn', text: '*Guest:*\\n' + $json['Guest Name'] },\n    { type: 'mrkdwn', text: '*Table:*\\n#' + $json['Table Number'] },\n    { type: 'mrkdwn', text: '*Time:*\\n' + $json['Time'] },\n    { type: 'mrkdwn', text: '*Party Size:*\\n' + $json['Party Size'] },\n    { type: 'mrkdwn', text: '*Server:*\\n' + $json['Server Name'] },\n    { type: 'mrkdwn', text: '*Date:*\\n' + $json['Reservation Date'] }\n  ] },\n  { type: 'divider' },\n  { type: 'section', text: { type: 'mrkdwn', text: ':warning: *Restriction:* `' + $json['Dietary Restrictions'] + '`' } },\n  { type: 'context', elements: [ { type: 'mrkdwn', text: 'Please confirm allergen-safe prep before plating.' } ] }\n] }) }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "id": "6c35965e-1722-4f73-8120-d471e4c8aaaa",
+      "name": "Slack Allergy Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "noop",
+              "value": "pass-through"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fbb94c67-1285-40f2-a533-af993f64346e",
+      "name": "No-Op Pass-Through",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "0a0522f1-7b5a-48d7-8298-55eb48bd2ebb",
+      "name": "Merge Branches",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "airtableOAuth2Api",
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_TABLE_ID",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Guest Name": "={{ $json[\"Guest Name\"] }}",
+            "Reservation Date": "={{ $json[\"Reservation Date\"] }}",
+            "Time": "={{ $json[\"Time\"] }}",
+            "Party Size": "={{ $json[\"Party Size\"] }}",
+            "Table Number": "={{ $json[\"Table Number\"] }}",
+            "Dietary Restrictions": "={{ $json[\"Dietary Restrictions\"] }}",
+            "Server Name": "={{ $json[\"Server Name\"] }}",
+            "Allergy Alert": "={{ $json[\"Allergy Alert\"] }}",
+            "Upsert Key": "={{ $json[\"Upsert Key\"] }}"
+          },
+          "matchingColumns": [
+            "Upsert Key"
+          ],
+          "schema": [
+            {
+              "id": "Guest Name",
+              "displayName": "Guest Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "Reservation Date",
+              "displayName": "Reservation Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "Time",
+              "displayName": "Time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false,
+              "type": "string"
+            },
+            {
+              "id": "Party Size",
+              "displayName": "Party Size",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false,
+              "type": "number"
+            },
+            {
+              "id": "Table Number",
+              "displayName": "Table Number",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "Dietary Restrictions",
+              "displayName": "Dietary Restrictions",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false,
+              "type": "string"
+            },
+            {
+              "id": "Server Name",
+              "displayName": "Server Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false,
+              "type": "string"
+            },
+            {
+              "id": "Allergy Alert",
+              "displayName": "Allergy Alert",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false,
+              "type": "boolean"
+            },
+            {
+              "id": "Upsert Key",
+              "displayName": "Upsert Key",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "id": "e60d75b4-65cd-4028-b5ee-84f307c9ccbb",
+      "name": "Airtable Daily Service Upsert",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        128
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Transform & Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform & Normalize": {
+      "main": [
+        [
+          {
+            "node": "IF Allergy Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Allergy Check": {
+      "main": [
+        [
+          {
+            "node": "Slack Allergy Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No-Op Pass-Through",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Allergy Alert": {
+      "main": [
+        [
+          {
+            "node": "Merge Branches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No-Op Pass-Through": {
+      "main": [
+        [
+          {
+            "node": "Merge Branches",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Branches": {
+      "main": [
+        [
+          {
+            "node": "Airtable Daily Service Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-04-29T12:37:22.022Z",
+      "createdAt": "2026-04-29T12:37:22.022Z",
+      "id": "EPYHNiWDBK5PSvD5",
+      "name": "bistro-sync"
+    },
+    {
+      "updatedAt": "2026-04-29T12:37:22.025Z",
+      "createdAt": "2026-04-29T12:37:22.025Z",
+      "id": "g5aZtBjfArYlJugj",
+      "name": "kitchen-alerts"
+    }
+  ]
+}

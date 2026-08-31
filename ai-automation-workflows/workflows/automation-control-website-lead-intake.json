@@ -1,0 +1,133 @@
+{
+  "name": "Automation Control \u2014 Website Lead Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "automation-control-lead-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8f9b2d01-3ba5-4d61-9f6b-4a741d65fb11",
+      "name": "Website Lead Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body || $json;\nconst clean = (v) => String(v ?? '').trim();\nconst name = clean(input.name);\nconst email = clean(input.email);\nconst company = clean(input.company);\nconst phone = clean(input.phone);\nconst service = clean(input.service);\nconst budget = clean(input.budget);\nconst message = clean(input.message);\nconst page = clean(input.page || input.sourcePage || $json.headers?.referer);\nconst utmSource = clean(input.utm_source);\nconst utmMedium = clean(input.utm_medium);\nconst utmCampaign = clean(input.utm_campaign);\nconst ip = clean($json.headers?.['x-forwarded-for'] || $json.headers?.['x-real-ip']);\nconst userAgent = clean($json.headers?.['user-agent']);\nconst submittedAt = new Date().toISOString();\nconst missing = [];\nif (!name) missing.push('name');\nif (!email) missing.push('email');\nif (!message) missing.push('message');\nconst qualifiedHint = [service, budget, message].join(' ').toLowerCase();\nconst priority = /urgent|asap|this week|call|automation|seo|website|mobile|crm|lead|booking|pipeline/.test(qualifiedHint) ? 'high' : 'normal';\nreturn [{ json: { name, email, company, phone, service, budget, message, page, utmSource, utmMedium, utmCampaign, ip, userAgent, submittedAt, missing, isValid: missing.length === 0, priority } }];"
+      },
+      "id": "19e48ec2-7d45-4800-9d0e-49a3a822d0a8",
+      "name": "Normalize Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "portfolio@example.com",
+        "subject": "=New Automation Control Lead \u2014 {{ $json.name }}{{ $json.company ? ' / ' + $json.company : '' }}",
+        "emailType": "text",
+        "message": "=New Automation Control website lead received.\n\nPriority: {{ $json.priority }}\nSubmitted: {{ $json.submittedAt }}\nValid: {{ $json.isValid }}{{ $json.missing.length ? ' (missing: ' + $json.missing.join(', ') + ')' : '' }}\n\nName: {{ $json.name }}\nEmail: {{ $json.email }}\nPhone: {{ $json.phone || 'Not provided' }}\nCompany: {{ $json.company || 'Not provided' }}\nService interest: {{ $json.service || 'Not selected' }}\nBudget/timeline: {{ $json.budget || 'Not provided' }}\n\nMessage:\n{{ $json.message }}\n\nAttribution:\nPage: {{ $json.page || 'Unknown' }}\nUTM Source: {{ $json.utmSource || 'None' }}\nUTM Medium: {{ $json.utmMedium || 'None' }}\nUTM Campaign: {{ $json.utmCampaign || 'None' }}\nIP: {{ $json.ip || 'Unknown' }}\nUser Agent: {{ $json.userAgent || 'Unknown' }}\n\nSuggested next step:\nReply within 15 minutes with a short discovery question and a booking link.\n\n\u2014 Automation Control Lead Intake",
+        "options": {}
+      },
+      "id": "35d94860-7b8b-4d80-824f-b813e4580a60",
+      "name": "Email Lead Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": true,\n  \"message\": \"Thanks \u2014 your project request was received. We'll reply soon.\",\n  \"receivedAt\": \"{{ $('Normalize Lead').first().json.submittedAt }}\"\n}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "https://automation-control.cloud"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "9cbfd2c8-7d35-4b02-bad5-f2b147c73d61",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        48,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Website Lead Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead": {
+      "main": [
+        [
+          {
+            "node": "Email Lead Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Lead Alert": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "tags": []
+}

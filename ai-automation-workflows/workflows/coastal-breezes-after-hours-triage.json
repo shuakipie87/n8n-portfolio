@@ -1,0 +1,767 @@
+{
+  "name": "Coastal Breezes Property Management \u2014 After-Hours Urgent Triage",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "coastal-breezes-triage",
+        "options": {}
+      },
+      "id": "b3cbe42e-72ac-42c0-889f-cf87486ba606",
+      "name": "VOIP Inbound Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        176
+      ],
+      "notes": "PURPOSE: Entry point for all VOIP call/text data from Twilio or Vonage. Simulates delivery of inbound calls and SMS transcriptions to the triage workflow.\nINPUT: POST body with fields: CallerID, Timestamp, MessageTranscription, PropertyType, UrgencyScore.\nOUTPUT: Passes the raw body plus headers/params/query to the Check Urgency Level switch node. CRITICAL: user data is always under $json.body.*\nCONFIG: Register this webhook URL in your Twilio/Vonage dashboard as the SMS/Call webhook endpoint. Path: coastal-breezes-triage.\nERRORS: 404 = wrong path configured; 405 = method mismatch (must be POST).\nPINNED DATA: 75 items representing all test scenarios from the CSV. Items 1-3 test all primary branches (Life Safety, Non-Urgent, Moderate)."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "life-safety-score",
+                    "leftValue": "={{ $json.body.UrgencyScore }}",
+                    "rightValue": 8,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gte"
+                    }
+                  },
+                  {
+                    "id": "life-safety-flood",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "flood",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-fire",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "fire",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-gas",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "gas leak",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-smoke",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "smoke",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-locked-out",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "locked out",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-no-heat",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "no heat",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-water-damage",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "water damage",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-burst-pipe",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "burst pipe",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-structural",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "structural",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-emergency",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "emergency",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-ambulance",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "ambulance",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-break-in",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "break-in",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "life-safety-injury",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "injury",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "any"
+              },
+              "renameOutput": true,
+              "outputKey": "Life Safety Alert"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "moderate-score-gte",
+                    "leftValue": "={{ $json.body.UrgencyScore }}",
+                    "rightValue": 5,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gte"
+                    }
+                  },
+                  {
+                    "id": "moderate-score-lte",
+                    "leftValue": "={{ $json.body.UrgencyScore }}",
+                    "rightValue": 7,
+                    "operator": {
+                      "type": "number",
+                      "operation": "lte"
+                    }
+                  },
+                  {
+                    "id": "moderate-ac",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "ac",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "moderate-hvac",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "hvac",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "moderate-hot-water",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "no hot water",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "moderate-elevator",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "elevator",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "moderate-pest",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "pest",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "moderate-appliance",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "appliance",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "moderate-electrical",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "electrical",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "moderate-plumbing",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "plumbing issue",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "any"
+              },
+              "renameOutput": true,
+              "outputKey": "Moderate Issue"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "nonurgent-score",
+                    "leftValue": "={{ $json.body.UrgencyScore }}",
+                    "rightValue": 4,
+                    "operator": {
+                      "type": "number",
+                      "operation": "lte"
+                    }
+                  },
+                  {
+                    "id": "nonurgent-wifi",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "wifi password",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "nonurgent-pool",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "pool hours",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "nonurgent-parking",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "parking",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "nonurgent-noise",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "noise",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "nonurgent-visitor",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "visitor",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "nonurgent-trash",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "trash",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "nonurgent-package",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "package",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "nonurgent-billing",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "billing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "nonurgent-lease",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "lease",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "nonurgent-amenity",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "amenity",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  },
+                  {
+                    "id": "nonurgent-booking",
+                    "leftValue": "={{ $json.body.MessageTranscription.toLowerCase() }}",
+                    "rightValue": "booking",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "any"
+              },
+              "renameOutput": true,
+              "outputKey": "Non-Urgent Request"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "de1f2971-47ea-454d-bd98-76c8cec2ece5",
+      "name": "Check Urgency Level",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -384,
+        144
+      ],
+      "notes": "PURPOSE: Categorizes each inbound VOIP item into Life Safety (output 0), Moderate (output 1), Non-Urgent (output 2), or Unclassified (output 3/extra) based on UrgencyScore and keyword matching.\nINPUT: Webhook body with UrgencyScore (1-10) and MessageTranscription string. Access via $json.body.*\nOUTPUT: output 0 = Life Safety Alert (score>=8 OR 14 keywords), output 1 = Moderate Issue (score 5-7 OR 10 keywords including ac/hvac), output 2 = Non-Urgent Request (score<=4 OR 12 keywords), output 3 = Unclassified (fallbackOutput: extra \u2014 catch-all).\nRULE PRIORITY: Rules evaluated in order. Life Safety wins over Moderate. Moderate wins over Non-Urgent. First-match semantics.\nCONFIG: fallbackOutput set to 'extra' per typeVersion 3.2 spec \u2014 adds a 4th output for unmatched items.\nERRORS: Items with undefined UrgencyScore coerce to 0 under loose validation \u2014 routes to Non-Urgent (score<=4). Safe fallback."
+    },
+    {
+      "parameters": {
+        "authentication": "airtableOAuth2Api",
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_AIRTABLE_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_TABLE_ID",
+          "mode": "name"
+        },
+        "filterByFormula": "={{ '{DayOfWeek} = \"' + $now.toFormat('cccc') + '\"' }}",
+        "options": {
+          "fields": [
+            "DayOfWeek",
+            "TechnicianName",
+            "Phone",
+            "Specialty"
+          ]
+        }
+      },
+      "id": "7bf48da0-a3c1-483b-a526-a51bc45ae194",
+      "name": "Lookup On-Call Technician",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -160,
+        -48
+      ],
+      "notes": "PURPOSE: Queries the OnCallRoster table in Airtable to find the on-call technician for the current day of the week.\nINPUT: Receives alert items from Switch node outputs 0 (Life Safety) and 1 (Moderate). Both connect to this node's main[0] input.\nOUTPUT: Airtable record with fields DayOfWeek, TechnicianName, Phone, Specialty. Returns empty if no roster entry found for today.\nKEY EXPRESSION: filterByFormula = ={{ '{DayOfWeek} = \"' + $now.toFormat('cccc') + '\"' }} \u2014 Luxon cccc returns full day name (Monday, Tuesday...Sunday). Produces valid Airtable formula: {DayOfWeek} = \"Tuesday\"\nCONFIG: Replace AIRTABLE_BASE_ID_HERE with your base ID from the Airtable URL. Create table OnCallRoster with columns: DayOfWeek, TechnicianName, Phone, Specialty. Populate with 7 rows from airtable_oncall_roster.csv.\nERRORS: Empty result handled by Technician Found Check downstream. 401=bad token; 404=wrong base or table name (case-sensitive)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "check-tech-name-notempty",
+              "leftValue": "={{ $json.TechnicianName }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e77ef0be-569d-4874-baae-4b649b6fa2e7",
+      "name": "Technician Found Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        64,
+        -48
+      ],
+      "notes": "PURPOSE: Guards the Slack alert path. Only proceeds if Airtable returned a valid technician record with a non-empty TechnicianName. Routes empty or missing results to the error handler.\nINPUT: Airtable search result \u2014 either a record with TechnicianName populated, or empty.\nOUTPUT: TRUE branch (output 0) = TechnicianName is not empty, proceed to Send Urgent Slack Alert. FALSE branch (output 1) = TechnicianName is empty, route to Error Handler \u2014 No Technician Found.\nEXPRESSION: $json.TechnicianName checked with notEmpty operator (unary/singleValue:true).\nCONFIG: No credentials required. typeVersion 2.2 requires conditions.options and conditions.combinator fields.\nERRORS: If Airtable API itself throws (401/404), the Error Trigger catches that instead of this node."
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AS8TNAEGP",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "text": "={{ '\ud83d\udea8 URGENT PROPERTY ALERT \u2014 Coastal Breezes\\n\\n' + '\ud83d\udcde Caller: ' + $('VOIP Inbound Webhook').first().json.body.CallerID + '\\n' + '\ud83c\udfe0 Property Type: ' + $('VOIP Inbound Webhook').first().json.body.PropertyType + '\\n' + '\u26a0\ufe0f Urgency Score: ' + $('VOIP Inbound Webhook').first().json.body.UrgencyScore + '/10\\n' + '\ud83d\udd50 Received: ' + $('VOIP Inbound Webhook').first().json.body.Timestamp + '\\n\\n' + '\ud83d\udccb Message Transcription:\\n' + $('VOIP Inbound Webhook').first().json.body.MessageTranscription + '\\n\\n' + '\ud83d\udc77 On-Call Technician: ' + $json.TechnicianName + '\\n' + '\ud83d\udcf1 Technician Phone: ' + $json.Phone + '\\n' + '\ud83d\udd27 Specialty: ' + $json.Specialty + '\\n\\n' + 'ACTION REQUIRED: Contact technician immediately and dispatch to property.' }}",
+        "otherOptions": {}
+      },
+      "id": "b39a87d1-b73a-4488-ab33-09c9c2c3d3bf",
+      "name": "Send Urgent Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        288,
+        -96
+      ],
+      "notes": "PURPOSE: Posts a rich formatted alert to #maintenance-alerts Slack channel for all Life Safety and Moderate urgency events once a technician is confirmed on-call.\nINPUT: Airtable technician record (TechnicianName, Phone, Specialty in $json). Original VOIP data accessed via cross-node reference $('VOIP Inbound Webhook').first().\nOUTPUT: Slack message confirmation. Terminal node for the urgent path.\nKEY EXPRESSIONS: All 8 data points in the message \u2014 CallerID, PropertyType, UrgencyScore, Timestamp, MessageTranscription from webhook node; TechnicianName, Phone, Specialty from current Airtable $json.\nWHY CROSS-NODE REFERENCE: By this point $json contains Airtable data, not webhook data. Must reference original webhook node explicitly.\nSLACK v2.3 PARAMS: Uses select/channelId/__rl/messageType/text/otherOptions \u2014 NOT resource/operation/channel (those are wrong for v2.3).\nCONFIG: Create Slack Bot Token credential in n8n. Bot needs chat:write and channels:read scopes. Invite bot to #maintenance-alerts.\nERRORS: 404=channel not found; 403=missing scopes; rate limit=1msg/sec handled by n8n retry."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Coastal Breezes Morning Review Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.body.Timestamp }}",
+            "CallerID": "={{ $json.body.CallerID }}",
+            "MessageTranscription": "={{ $json.body.MessageTranscription }}",
+            "PropertyType": "={{ $json.body.PropertyType }}",
+            "UrgencyScore": "={{ $json.body.UrgencyScore }}",
+            "Category": "NON-URGENT",
+            "Status": "Pending Review"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "CallerID",
+              "displayName": "CallerID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MessageTranscription",
+              "displayName": "MessageTranscription",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PropertyType",
+              "displayName": "PropertyType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "UrgencyScore",
+              "displayName": "UrgencyScore",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "097a3d15-4816-4a57-af1d-431080b78bc5",
+      "name": "Log to Google Sheets Morning Review",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -160,
+        272
+      ],
+      "notes": "PURPOSE: Appends non-urgent request records to the Google Sheets morning review log so day-staff can follow up during business hours without waking on-call technicians.\nINPUT: Non-urgent items from Switch node output 2. $json.body.* still accessible \u2014 this is the first node after the webhook on this branch.\nOUTPUT: Passes items through after append, chaining to Send Non-Emergency Logged Email.\nCOLUMNS MAPPED: Timestamp, CallerID, MessageTranscription, PropertyType, UrgencyScore (from $json.body.*); Category=NON-URGENT (static); Status=Pending Review (static). 7 columns total.\nGoogle Sheets v4.5 REQUIRES: columns.mappingMode=defineBelow + columns.schema array (one entry per column). Without schema, the node fails on import.\nCONFIG: Replace YOUR_GOOGLE_SHEET_ID with sheet ID from URL. Create tab named exactly: Coastal Breezes Morning Review Log. Add column headers in row 1: Timestamp, CallerID, MessageTranscription, PropertyType, UrgencyScore, Category, Status.\nERRORS: 403=sheet not shared with OAuth account; tab name mismatch=column map error."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.body.CallerID + '@placeholder.coastalbreezes.com' }}",
+        "subject": "[Coastal Breezes] Your request has been logged for morning review",
+        "message": "={{ '<html><body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\">' + '<div style=\"background-color: #2c5f8a; padding: 20px; border-radius: 8px 8px 0 0;\">' + '<h1 style=\"color: white; margin: 0; font-size: 20px;\">Coastal Breezes Property Management</h1>' + '<p style=\"color: #d0e8ff; margin: 5px 0 0 0; font-size: 14px;\">After-Hours Response System</p>' + '</div>' + '<div style=\"background-color: #f8f9fa; padding: 25px; border-radius: 0 0 8px 8px; border: 1px solid #dee2e6;\">' + '<h2 style=\"color: #2c5f8a; font-size: 18px;\">Your Request Has Been Received</h2>' + '<p style=\"color: #333; line-height: 1.6;\">Thank you for contacting Coastal Breezes Property Management. We have received your message and logged it for review by our team during morning hours.</p>' + '<div style=\"background-color: white; border-left: 4px solid #2c5f8a; padding: 15px; margin: 20px 0; border-radius: 0 4px 4px 0;\">' + '<p style=\"margin: 0 0 8px 0;\"><strong>Reference Number:</strong> CB-' + $now.toFormat('yyyyMMdd') + '-' + $json.body.CallerID.replace(/[^0-9]/g, \"\").slice(-6) + '</p>' + '<p style=\"margin: 0 0 8px 0;\"><strong>Received At:</strong> ' + $json.body.Timestamp + '</p>' + '<p style=\"margin: 0 0 8px 0;\"><strong>Property Type:</strong> ' + $json.body.PropertyType + '</p>' + '<p style=\"margin: 0;\"><strong>Your Message:</strong> ' + $json.body.MessageTranscription + '</p>' + '</div>' + '<p style=\"color: #333; line-height: 1.6;\">Our team will follow up with you during regular business hours (Monday\u2013Friday, 8 AM\u20136 PM EST). If this becomes an urgent matter before then, please call our emergency line at <strong>(305) 555-0100</strong>.</p>' + '<p style=\"color: #666; font-size: 12px; margin-top: 30px; border-top: 1px solid #dee2e6; padding-top: 15px;\">This is an automated message from the Coastal Breezes After-Hours Response System. Please do not reply to this email.</p>' + '</div></body></html>' }}",
+        "options": {}
+      },
+      "id": "8f82ed15-6849-42cd-9a21-7355ef2c504e",
+      "name": "Send Non-Emergency Logged Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        64,
+        272
+      ],
+      "notes": "PURPOSE: Sends a professional HTML acknowledgment email to the caller confirming their non-urgent request was logged and will be addressed during business hours.\nINPUT: Non-urgent items after Google Sheets append. $json.body.* still accessible from original webhook payload.\nOUTPUT: Gmail send confirmation. Terminal node for the non-urgent path.\nKEY EXPRESSIONS: sendTo = CallerID + '@placeholder.coastalbreezes.com' (PLACEHOLDER \u2014 replace with CRM email lookup in production). Reference number = CB-{yyyyMMdd}-{last6digits of CallerID}. All message body fields from $json.body.*\nGmail v2.1 PARAMS: sendTo, subject, emailType='html', message, options={}. No resource/operation fields needed for send.\nCONFIG: Create Gmail OAuth2 credential in n8n. Replace CREDENTIAL_ID_HERE. Update sendTo expression with real email lookup logic before production deployment.\nERRORS: 401=OAuth token expired (refresh in n8n credentials); 400=invalid sendTo address (placeholder will fail in prod)."
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AS8TNAEGP",
+          "mode": "list",
+          "cachedResultName": "Portfolio Resource"
+        },
+        "text": "={{ '\u274c ERROR: No On-Call Technician Found \u2014 Coastal Breezes\\n\\n' + 'An urgent alert was received but NO on-call technician could be found for today (' + $now.toFormat('cccc, MMMM d yyyy') + ').\\n\\n' + '\ud83d\udcde Caller ID: ' + ($json.body ? $json.body.CallerID : ($json.CallerID || 'Unknown')) + '\\n' + '\ud83d\udccb Message: ' + ($json.body ? $json.body.MessageTranscription : ($json.MessageTranscription || 'See execution log')) + '\\n' + '\u26a0\ufe0f Urgency Score: ' + ($json.body ? $json.body.UrgencyScore : ($json.UrgencyScore || 'Unknown')) + '\\n\\n' + 'IMMEDIATE ACTION REQUIRED: Manually identify and dispatch on-call coverage. Check OnCallRoster in Airtable and update for today.\\n\\n' + 'Workflow Error Context: ' + ($json.error ? $json.error.message : 'Airtable returned empty roster or item did not match urgency rules') }}",
+        "otherOptions": {}
+      },
+      "id": "23d7d46f-fbb1-430f-b69b-6a91c691e409",
+      "name": "Error Handler \u2014 No Technician Found",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        288,
+        128
+      ],
+      "notes": "PURPOSE: Fallback error handler that fires when (a) Airtable returns no on-call technician for today, (b) an item matched no urgency rule (Switch fallback output 3), or (c) the Workflow Error Trigger fires on a runtime exception.\nINPUT: Receives from three sources: (1) Technician Found Check FALSE branch, (2) Switch output 3/extra fallback, (3) Workflow Error Trigger. Each source provides a differently-shaped item \u2014 ternary expressions handle all three shapes.\nOUTPUT: Slack message to #maintenance-alerts with diagnostic context. Terminal node.\nTERNARY DEFENSE: $json.body ? $json.body.CallerID : ($json.CallerID || 'Unknown') \u2014 handles both webhook-wrapped items and flat error trigger items.\nCONFIG: Uses same Slack credential as Send Urgent Slack Alert. Same CREDENTIAL_ID_HERE value.\nERRORS: If this node itself fails (Slack down), there is no further fallback \u2014 monitor n8n execution logs for failures of this node."
+    },
+    {
+      "parameters": {},
+      "id": "2eda04fe-dd83-4306-9166-176fc97e5865",
+      "name": "Workflow Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        64,
+        464
+      ],
+      "notes": "PURPOSE: Catches any unhandled runtime exception thrown by any node in this workflow. Routes error context to the Error Handler for immediate Slack notification.\nINPUT: n8n fires this trigger automatically when any node throws an unhandled exception. Item shape: { error: { message, node: { name, type }, execution: {...} } }.\nOUTPUT: Error context object passed to Error Handler \u2014 No Technician Found node.\nCONFIG: No configuration required. Fires automatically for this workflow. Must be in the same workflow (not a sub-workflow) to catch errors from other nodes.\nERRORS: N/A \u2014 this is the error catcher itself."
+    }
+  ],
+  "connections": {
+    "VOIP Inbound Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check Urgency Level",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Urgency Level": {
+      "main": [
+        [
+          {
+            "node": "Lookup On-Call Technician",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lookup On-Call Technician",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log to Google Sheets Morning Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler \u2014 No Technician Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup On-Call Technician": {
+      "main": [
+        [
+          {
+            "node": "Technician Found Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Technician Found Check": {
+      "main": [
+        [
+          {
+            "node": "Send Urgent Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler \u2014 No Technician Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Google Sheets Morning Review": {
+      "main": [
+        [
+          {
+            "node": "Send Non-Emergency Logged Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Error Handler \u2014 No Technician Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": []
+}
